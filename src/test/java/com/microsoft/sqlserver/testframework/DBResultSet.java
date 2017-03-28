@@ -205,7 +205,7 @@ public class DBResultSet extends AbstractParentWrapper {
 
         // Verify
         // TODO: Check the intermittent verification error
-        // verifydata(ordinal, coercion, expectedData, retrieved);
+         verifydata(ordinal, coercion, expectedData, retrieved);
     }
 
     /**
