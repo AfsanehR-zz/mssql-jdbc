@@ -16,6 +16,7 @@ import java.io.Reader;
 import java.math.BigDecimal;
 import java.sql.JDBCType;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -57,8 +58,9 @@ public class DBResultSet extends AbstractParentWrapper {
     public int _currentrow = -1;       // The row this rowset is currently pointing to
 
     ResultSet resultSet = null;
-    DBResultSetMetaData metaData;
-
+    ResultSetMetaData metaData;
+    DBResultSetMetaData metaData1;
+    
     DBResultSet(DBStatement dbstatement,
             ResultSet internal) {
         super(dbstatement, internal, "resultSet");
@@ -169,8 +171,8 @@ public class DBResultSet extends AbstractParentWrapper {
      */
     public void verify(DBTable table) throws SQLException {
         currentTable = table;
-        metaData = this.getMetaData();
-        metaData.verify();
+        metaData1 = this.getMetaData();
+        metaData1.verify();
 
         while (this.next())
             this.verifyCurrentRow(table);
@@ -221,7 +223,7 @@ public class DBResultSet extends AbstractParentWrapper {
             Class coercion,
             Object expectedData,
             Object retrieved) throws SQLException {
-        metaData = this.getMetaData();
+        metaData = resultSet.getMetaData();
         switch (metaData.getColumnType(ordinal + 1)) {
             case java.sql.Types.BIGINT:
                 assertTrue((((Long) expectedData).longValue() == ((Long) retrieved).longValue()),
