@@ -204,7 +204,7 @@ public class DBResultSet extends AbstractParentWrapper {
         Object retrieved = this.getXXX(ordinal + 1, coercion);
 
         // Verify
-        // TODO: Check the intermittent verification error
+        //TODO: testing
          verifydata(ordinal, coercion, expectedData, retrieved);
     }
 
