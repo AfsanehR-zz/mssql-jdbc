@@ -958,6 +958,16 @@ public class SQLServerResultSet implements ISQLServerResultSet {
             loggerExternal.exiting(getClassNameLogging(), "next", false);
             return false;
         }
+                   
+        // either scrollable or forwardOnly, we should honor limit set by setMaxRowCount
+        // so enforce any maxRows limit here
+        if (maxRows > 0) {
+            if (currentRow == maxRows) {
+                currentRow = AFTER_LAST_ROW;
+                loggerExternal.exiting(getClassNameLogging(), "next", false);
+                return false;
+            }
+        }
 
         // For scrollable cursors, next() is just a special case of relative()
         if (!isForwardOnly()) {
@@ -968,18 +978,6 @@ public class SQLServerResultSet implements ISQLServerResultSet {
             boolean value = hasCurrentRow();
             loggerExternal.exiting(getClassNameLogging(), "next", value);
             return value;
-        }
-
-        // Fast path for forward only cursors...
-
-        // Server forward only cursors do not honor SET ROWCOUNT,
-        // so enforce any maxRows limit here.
-        if (0 != serverCursorId && maxRows > 0) {
-            if (currentRow == maxRows) {
-                currentRow = AFTER_LAST_ROW;
-                loggerExternal.exiting(getClassNameLogging(), "next", false);
-                return false;
-            }
         }
 
         // There is no scroll window for forward only cursors,

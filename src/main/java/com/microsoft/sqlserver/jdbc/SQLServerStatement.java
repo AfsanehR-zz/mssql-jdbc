@@ -776,7 +776,6 @@ public class SQLServerStatement implements ISQLServerStatement {
 
     final void setMaxRowsAndMaxFieldSize() throws SQLServerException {
         if (EXECUTE_QUERY == executeMethod || EXECUTE == executeMethod) {
-            connection.setMaxRows(maxRows);
             connection.setMaxFieldSize(maxFieldSize);
         }
         else {
