@@ -14,10 +14,11 @@ install:
   - ps: choco pack
   - ps: choco install jce -fdv -s . -y -failonstderr
   - ps: cd..
-  - ps: New-SelfSignedCertificate -certstorelocation cert:\localmachine\my -dnsname orin.windowsitpro.internal
+  - ps: $cert = New-SelfSignedCertificate -certstorelocation cert:\localmachine\my -dnsname testcert.petri.com
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
   - ps: cd AE_Certificates
-  - ps: Export-PfxCertificate -cert cert:\localMachine\my\CE0976529B02DE058C9CB2C0E64AD79DAFB18CF4 -FilePath cert.pfx -Password $pwd
+  - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
+  - ps: keytool -importkeystore -srckeystore $certificate -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS
 
 build_script:
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
