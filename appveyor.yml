@@ -18,6 +18,7 @@ install:
   - ps: cd AE_Certificates
   - ps: $cert = New-SelfSignedCertificate -certstorelocation cert:\localmachine\my -dnsname testcert.petri.com
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
+  - ps: $path = 'cert:\localMachine\my\' + $cert.thumbprint
   - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
   - ps: keytool -importkeystore -srckeystore $certificate -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS
 
