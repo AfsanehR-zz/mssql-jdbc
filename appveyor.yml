@@ -20,7 +20,7 @@ install:
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
   - ps: $path = 'cert:\localMachine\my\' + $cert.thumbprint
   - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
-  - ps:  Get-PfxCertificate -FilePath Certificate.pfx > certificate.txt
+  - ps: Get-ChildItem -path cert:\LocalMachine\My > certificate.txt
 build_script:
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
