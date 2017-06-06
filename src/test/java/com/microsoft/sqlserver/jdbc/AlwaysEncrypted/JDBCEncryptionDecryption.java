@@ -20,7 +20,7 @@ import org.junit.runner.RunWith;
 
 
 @RunWith(JUnitPlatform.class)
-public class JDBCEncryptionDecryption extends AESetup {
+public class JDBCEncryptionDecryptionTest extends AESetup {
     private static Connection conn = null;
     private static Statement stmt = null;
     /**
