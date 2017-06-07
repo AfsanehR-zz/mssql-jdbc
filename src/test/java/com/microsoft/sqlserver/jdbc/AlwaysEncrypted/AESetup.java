@@ -54,13 +54,15 @@ public class AESetup extends AbstractTest {
         stmt = con.createStatement(); 
         createCMK();
         createCEK();
+        dropCEK();
+        dropCMK();
     }
     
-    @AfterAll
-    static void dropAll() throws SQLServerException, SQLException{
-        dropCEK();
-        dropCMK();     
-    }
+//    @AfterAll
+//    static void dropAll() throws SQLServerException, SQLException{
+//        dropCEK();
+//        dropCMK();     
+//    }
     
     private static void readCertificateFromFile(){
         try {
