@@ -15,6 +15,9 @@ env:
   #- mssql_jdbc_logging_handler='console'|'file'
 
 install: 
+  - cd AE_Certificates
+  - keytool -importkeystore -srckeystore cert.pfx -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS
+  - cd ..
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
 
