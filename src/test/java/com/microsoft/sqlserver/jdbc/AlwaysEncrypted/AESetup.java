@@ -24,6 +24,7 @@ import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
 
 import com.microsoft.sqlserver.jdbc.SQLServerException;
+import com.microsoft.sqlserver.jdbc.SQLServerStatementColumnEncryptionSetting;
 import com.microsoft.sqlserver.testframework.AbstractTest;
 import com.microsoft.sqlserver.testframework.DBConnection;
 import com.microsoft.sqlserver.testframework.DBStatement;
@@ -40,7 +41,7 @@ public class AESetup extends AbstractTest {
     static String cmkName = "JDBC_CMK";
     static String cekName = "JDBC_CEK";
     static String keyStoreName = "MSSQL_CERTIFICATE_STORE";
-    static String keyPath = "LocalMachine/My/";
+    static String keyPath = "CurrentUser/My/";
     static String numericTable = "numericTable";
     
     /**
@@ -53,17 +54,13 @@ public class AESetup extends AbstractTest {
         readCertificateFromFile();
         con =  DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
+        Utils.dropTableIfExists(numericTable, stmt);
+        dropCEK();
+        dropCMK();    
         createCMK();
         createCEK();             
     }
     
-    @AfterAll
-    static void dropAll() throws SQLServerException, SQLException{
-        dropCEK();
-        dropCMK();     
-        stmt.close();
-        con.close();
-    }
     
     private static void readCertificateFromFile(){
         try {
@@ -77,13 +74,16 @@ public class AESetup extends AbstractTest {
 
             while ((readLine = b.readLine()) != null) {
                 System.out.println(readLine);
-                if (readLine.contains("CN=testcert.petri.com ")){
+                if (readLine.contains("CN=AlwaysEncryptedCert")){
                     linecontents = readLine.split(" ");
                     thumbprint = linecontents[0];
                     break;
                 }
             }
+            
             keyPath += thumbprint;
+            
+            System.out.println("keypath:" + keyPath);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -92,13 +92,8 @@ public class AESetup extends AbstractTest {
     }
     
     static void createNumericTable(){
-        String sql = "create table " + numericTable + " (" + "PlainBit bit null,"
-                + "PlainTinyint tinyint null,"
-                + "RandomizedTinyint tinyint ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
-                + cekName + ") NULL,"
-                + "DeterministicTinyint tinyint ENCRYPTED WITH (ENCRYPTION_TYPE = DETERMINISTIC, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
-                + cekName + ") NULL,"
-
+        String sql = "create table " + numericTable 
+                + " ("             
                 + "PlainSmallint smallint null,"
                 + "RandomizedSmallint smallint ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
                 + cekName + ") NULL,"
@@ -124,19 +119,19 @@ public class AESetup extends AbstractTest {
     }
     
     private static void createCEK() throws SQLException{
-        String encryptedValue = "0x016E000001630075007200720065006E00740075007300650072002F006D0079002F006500380037003000650062006200620030006200340030006400390032006500610039003500360038006300650039006500300063006100650037003400630062003100310061003400660031006600B9AE7EBD7079C21F8C6219ACFDA9D0DB386ACD5AB953036CF9432BAF9164BB23C1989F828325B15E421A3E2519ED78B8CA90635E54EAF1BFC88E4D2D1A96D56E62C906516BA0C73139AE98B6999E3F21FFFAECDF2EFE3E75876638E36AB57B416932DFDFBAEC1DCB2A8C2CF1BA2A9869978E7E1037DB3B5F8CC4FEA0B66CD7DEACC8877CD52ED2CCE4B9303F9A79979D9E4B4BB1E317F7E21F2A551D3266B43A5CE3BF7F4823AAB40ACE2EB228ABA80FB7C692A0B9C8EB3075118B05126C74D7B5A3287A1B16707FBDD37257B88BF4F1E6EDA8FDB0AFD86EE534B6241C799C39D83D6DEB655B0F78C3D925F8A39503F58329951DF6695BDE2756855008D0AA3E0B6DA1DE39B6EB08B558D881C41315A14371ABEB1D0E92728C7CFA02448506F1A05622A79189FCEBC7EBD6989A6BAACCC4D51CA855093578D22F5ADB8FDE557DCC13F0E66A294C8636BA2E2F350EF81806E5C4C0482DFCF9861F184B81696266A992E66D3C4B28AAEF6E503222648B5418D2416E730E0D6ED98CC567221CD7DF8675FFA26CC75FD6CEF3FDF689934935A9B5A4910543782D7F79DC1F02E03392F96FFD03FE828D43551BBA6BDDE38303DBAD450A1E961C5C622160AE75895D8952A36817CDD0710EAE8F473B316007CCCD29C7C5C8AC52F7F0FF567C7482F5AEC8185819A99E00525E3472A054CDAA7A032E9FC2083F924A9534F50FABE320DA";
+        String encryptedValue = "0x016E000001630075007200720065006E00740075007300650072002F006D0079002F006500390035003100350065003500330031003500390036003500660033006400620031003900350038003200370032003000660065003300330032003400390035003100300031006400610064003400A7871B8D8F510AA88374823EAED916A7319DB0DC83C6E646FA7AF9F6B734C4356D66A116E36EB5F4A9544B32D4230C7BF5D582EF5401D955BB566F5A5CC14A976F74501C4B2CF2AEEF24589A0A2BABBFFBF558A09EA82EE76A4C0958BA4190AAB37084E9846954D3B68F9AAEB46FD28827110E5254318F24C1634A0259E89D0970B2CF4D6ACDF442185C3762CBDA63BE80104FB53821610CCB1E56C25571AC8F4C19C36DC68E8FF161C0B66605A9F661BB4DFA73D996A6E1DC8D265D2DB1061B46DA27719288830C17F955E0242A76DAB7D09F750919AEBDCEA1F4BA1F1846CD08099DDE11E3FE5E4C40435853A00EB3C0B2C8704B85B0C761FA2BB6944631293512F8D81386A1CBB641873F1E4F452BC5AE07955B506F3C158FA6ED5BACD7C199C825A0220136EBB75FD46B54FB3199C1E6E17897B437C3389D4931AA6982133E42DBED71C233B4C25260C9B78960020C513C6F12B52728C89918BFC4506FB0B1CF162FED01DDE3B6CA0BDA09DE39901D18ED554CB5E7F3224E837CC484C98CA2D00D448330E556504CE6DBB17531FE895781B57F182A74DDD42B0356F4B06B502088FC80F90F285A9F19DEB30F3EA20FE29B21ADF0B65B900A055B7FDA2403D23915C046BA7FC4AFE1153AEFB19F9D35B967AEAB19508BCBE49E7E90B84A22583BBFDE59258DC4081D2B6E0EFE3FC0BCBBCCB5584424CEA7A50A122AC20EE4";
         String sql = "CREATE COLUMN ENCRYPTION KEY " + cekName + " WITH VALUES " + "(COLUMN_MASTER_KEY = " + cmkName
                 + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = " + encryptedValue + ")" + ";";
         stmt.execute(sql);
     }
     
-    private static void dropCEK() throws SQLServerException, SQLException {
+    static void dropCEK() throws SQLServerException, SQLException {
         String cekSql = " if exists (SELECT name from sys.column_encryption_keys where name='" + cekName + "')"
                 + " begin" + " drop column encryption key " + cekName + " end";
         stmt.execute(cekSql);
     }
     
-    private static void dropCMK() throws SQLServerException, SQLException {
+   static void dropCMK() throws SQLServerException, SQLException {
         String cekSql = " if exists (SELECT name from sys.column_master_keys where name='" + cmkName + "')"
                 + " begin"
                 + " drop column master key " + cmkName
