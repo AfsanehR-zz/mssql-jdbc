@@ -1,0 +1,11 @@
+﻿
+
+   PSParentPath: Microsoft.PowerShell.Security\Certificate::CurrentUser\My
+
+Thumbprint                                Subject                                                                                                                                                             
+----------                                -------                                                                                                                                                             
+                                   
+FBDF96166119FF99B8280D29D160FAEC70CD11B4  CN=AlwaysEncryptedCert                                                                                                                                              
+                                 
+
+

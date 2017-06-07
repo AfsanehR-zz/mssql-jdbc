@@ -15,13 +15,7 @@ install:
   - ps: choco install jce -fdv -s . -y -failonstderr
   - ps: cd..
   - ps: mkdir AE_Certificates
-  - ps: cd AE_Certificates
-  - ps: $cert = New-SelfSignedCertificate -Subject "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUser\My -KeyExportPolicy Exportable -Type DocumentEncryptionCert -KeyUsage KeyEncipherment -KeySpec KeyExchange -KeyLength 2048 
-  - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
-  - ps: $path = 'cert:\CurrentUser\My\' + $cert.thumbprint
-  - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
-  - ps: Get-ChildItem -path cert:\CurrentUser\My > certificate.txt
-  - ps: cd..
+
 build_script:
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
