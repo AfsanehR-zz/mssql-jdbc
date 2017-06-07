@@ -16,7 +16,7 @@ install:
   - ps: cd..
   - ps: mkdir AE_Certificates
   - ps: cd AE_Certificates
-  - ps: $cert = New-SelfSignedCertificate -Subject "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUserMy -KeyExportPolicy Exportable -Type DocumentEncryptionCert -KeyUsage KeyEncipherment -KeySpec KeyExchange -KeyLength 2048 
+  - ps: $cert = New-SelfSignedCertificate -Subject "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUser\My -KeyExportPolicy Exportable -Type DocumentEncryptionCert -KeyUsage KeyEncipherment -KeySpec KeyExchange -KeyLength 2048 
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
   - ps: $path = 'cert:\CurrentUser\My\' + $cert.thumbprint
   - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
