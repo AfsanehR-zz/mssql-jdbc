@@ -14,6 +14,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Properties;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -21,8 +22,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
 
+import com.microsoft.sqlserver.jdbc.SQLServerConnection;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import com.microsoft.sqlserver.jdbc.SQLServerPreparedStatement;
+import com.microsoft.sqlserver.jdbc.SQLServerStatement;
 import com.microsoft.sqlserver.jdbc.SQLServerStatementColumnEncryptionSetting;
 import com.microsoft.sqlserver.testframework.Utils;
 
@@ -30,8 +33,8 @@ import com.microsoft.sqlserver.testframework.Utils;
 
 @RunWith(JUnitPlatform.class)
 public class JDBCEncryptionDecryptionTest extends AESetup {
-    private static Connection conn = null;
-    private static Statement stmt = null;
+    private static SQLServerConnection conn = null;
+    private static SQLServerStatement stmt = null;
     private static SQLServerPreparedStatement pstmt = null;
     String [] values = {"10"};
 
@@ -44,8 +47,15 @@ public class JDBCEncryptionDecryptionTest extends AESetup {
     @DisplayName("test connection")
     public void testNumeric() throws SQLException {
         try {
-            conn = DriverManager.getConnection(connectionString + ";columnEncryptionSetting=Enabled;");
-            stmt = conn.createStatement();
+            Properties info = new Properties();
+            info.setProperty("ColumnEncryptionSetting", "Enabled");
+            info.setProperty("keyStoreAuthentication", "JavaKeyStorePassword");
+            info.setProperty("keyStoreLocation", keyPath);
+            info.setProperty("keyStoreSecret", secretstrJks);
+            conn = (SQLServerConnection) DriverManager.getConnection(connectionString, info);
+            stmt =  (SQLServerStatement) conn.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, connection.getHoldability(), SQLServerStatementColumnEncryptionSetting.Enabled);
+
+            createCEK(storeProvider, certStore);   
             createNumericTable();
             populateNumeric(values);
             verifyResults();
@@ -69,7 +79,7 @@ public class JDBCEncryptionDecryptionTest extends AESetup {
                 + "?,?,?" 
                 + ")";
 
-        pstmt = (SQLServerPreparedStatement) connection.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, connection.getHoldability(), SQLServerStatementColumnEncryptionSetting.Enabled);
+        pstmt = (SQLServerPreparedStatement) conn.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY, connection.getHoldability(), SQLServerStatementColumnEncryptionSetting.Enabled);
 
         
         for (int i = 1; i <= 3; i++) {
