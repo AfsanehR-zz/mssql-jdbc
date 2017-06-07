@@ -75,6 +75,7 @@ public class AESetup extends AbstractTest {
             System.out.println("Reading file using Buffered Reader");
 
             while ((readLine = b.readLine()) != null) {
+                System.out.println(readLine);
                 if (readLine.contains("CN=testcert.petri.com ")){
                     linecontents = readLine.split(" ");
                     thumbprint = linecontents[0];
