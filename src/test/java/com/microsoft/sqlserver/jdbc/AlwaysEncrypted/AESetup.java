@@ -40,7 +40,7 @@ public class AESetup extends AbstractTest {
     static String cmkName = "JDBC_CMK";
     static String cekName = "JDBC_CEK";
     static String keyStoreName = "MSSQL_CERTIFICATE_STORE";
-    static String keyPath = "LocalMachine/My";
+    static String keyPath = "LocalMachine/My/";
     
     /**
      * Create connection, statement and generate path of resource file
@@ -82,7 +82,7 @@ public class AESetup extends AbstractTest {
                     break;
                 }
             }
-            keyPath += thumbprint.trim();
+            keyPath += thumbprint;
 
         } catch (IOException e) {
             e.printStackTrace();
