@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
 
+import com.microsoft.sqlserver.testframework.Utils;
+
 
 
 @RunWith(JUnitPlatform.class)
@@ -30,12 +32,16 @@ public class JDBCEncryptionDecryptionTest extends AESetup {
      */
     @Test
     @DisplayName("test connection")
-    public void testConnection() throws SQLException {
+    public void testNumeric() throws SQLException {
         try {
             conn = DriverManager.getConnection(connectionString);
+            stmt = conn.createStatement();
+            createNumericTable();
+            Utils.dropTableIfExists(numericTable, stmt);     
             conn.close();
         }
         finally {
         }
     }
+    
 }

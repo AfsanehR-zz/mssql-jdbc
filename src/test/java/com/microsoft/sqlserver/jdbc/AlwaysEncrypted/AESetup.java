@@ -41,6 +41,7 @@ public class AESetup extends AbstractTest {
     static String cekName = "JDBC_CEK";
     static String keyStoreName = "MSSQL_CERTIFICATE_STORE";
     static String keyPath = "LocalMachine/My/";
+    static String numericTable = "numericTable";
     
     /**
      * Create connection, statement and generate path of resource file
@@ -53,16 +54,16 @@ public class AESetup extends AbstractTest {
         con =  DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
         createCMK();
-        createCEK();
-        dropCEK();
-        dropCMK();
+        createCEK();             
     }
     
-//    @AfterAll
-//    static void dropAll() throws SQLServerException, SQLException{
-//        dropCEK();
-//        dropCMK();     
-//    }
+    @AfterAll
+    static void dropAll() throws SQLServerException, SQLException{
+        dropCEK();
+        dropCMK();     
+        stmt.close();
+        con.close();
+    }
     
     private static void readCertificateFromFile(){
         try {
@@ -88,6 +89,29 @@ public class AESetup extends AbstractTest {
             e.printStackTrace();
         }
 
+    }
+    
+    static void createNumericTable(){
+        String sql = "create table " + numericTable + " (" + "PlainBit bit null,"
+                + "PlainTinyint tinyint null,"
+                + "RandomizedTinyint tinyint ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
+                + cekName + ") NULL,"
+                + "DeterministicTinyint tinyint ENCRYPTED WITH (ENCRYPTION_TYPE = DETERMINISTIC, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
+                + cekName + ") NULL,"
+
+                + "PlainSmallint smallint null,"
+                + "RandomizedSmallint smallint ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
+                + cekName + ") NULL,"
+                + "DeterministicSmallint smallint ENCRYPTED WITH (ENCRYPTION_TYPE = DETERMINISTIC, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
+                + cekName + ") NULL"
+                + ");";
+
+        try {
+            stmt.execute(sql);
+            System.out.println("Table created!");
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
     }
     
     private static void createCMK() throws SQLException{
