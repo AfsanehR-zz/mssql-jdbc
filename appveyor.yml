@@ -9,6 +9,7 @@ services:
   - mssql2016
   
 install:
+  - mkdir AE_Certificates
   - ps: cd AE_Certificates
   - ps: $cert = New-SelfSignedCertificate -dns "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUser\My  
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
