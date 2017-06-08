@@ -20,7 +20,7 @@ install:
   - ps: $path = 'cert:\CurrentUser\My\' + $cert.thumbprint
   - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd
   - ps: Get-ChildItem -path cert:\CurrentUser\My > certificate.txt
-  - ps: keytool help
+  - ps: keytool -help
   - ps: keytool -importkeystore -srckeystore $certificate -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS -srcstorepass password -deststorepass password du 2> $null   
   - ps: cd..
 
