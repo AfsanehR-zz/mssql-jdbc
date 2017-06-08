@@ -9,11 +9,6 @@ services:
   - mssql2016
   
 install:
-  - ps: Write-Host 'Installing JCE with powershell'
-  - ps: cd AppVeyorJCE
-  - ps: choco pack
-  - ps: choco install jce -fdv -s . -y -failonstderr
-  - ps: cd ..
   - ps: cd AE_Certificates
   - ps: $cert = New-SelfSignedCertificate -dns "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUser\My  
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
