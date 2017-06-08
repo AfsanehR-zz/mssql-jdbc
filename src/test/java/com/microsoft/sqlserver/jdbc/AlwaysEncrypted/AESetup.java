@@ -111,6 +111,9 @@ public class AESetup extends AbstractTest {
                 if (readLine.contains(lookupValue)){
                     linecontents = readLine.split(" ");
                     if (OS.contains("windows")){
+                        System.out.println("inside");
+                        System.out.println(windowsKeyPath);
+                        System.out.println("thumprint: "+ linecontents[0]);
                         keyPath = windowsKeyPath;
                         thumbprint = linecontents[0];
                         keyPath += thumbprint;

@@ -47,6 +47,7 @@ public class JDBCEncryptionDecryptionTest extends AESetup {
     @DisplayName("test connection")
     public void testNumeric() throws SQLException {
         try {
+            System.out.println("inside test:" + keyPath);
             Properties info = new Properties();
             info.setProperty("ColumnEncryptionSetting", "Enabled");
             info.setProperty("keyStoreAuthentication", "JavaKeyStorePassword");
