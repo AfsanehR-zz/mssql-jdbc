@@ -108,7 +108,8 @@ public class AESetup extends AbstractTest {
 
             while ((readLine = b.readLine()) != null) {
                 System.out.println(readLine);
-                if (readLine.trim().contains(lookupValue.trim())){
+//                if (readLine.trim().contains(lookupValue.trim())){
+                  if(readLine.trim().endsWith(lookupValue)){
                     linecontents = readLine.split(" ");
                     System.out.println("OS: " + OS);
 //                    if (OS.contains("windows")){
