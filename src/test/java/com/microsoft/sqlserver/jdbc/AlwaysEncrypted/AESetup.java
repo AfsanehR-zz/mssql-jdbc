@@ -65,19 +65,19 @@ public class AESetup extends AbstractTest {
     @BeforeAll
     static void setUpConnection() throws SQLException {
         filePath =   Utils.getCurrentClassPath();     
-        readFromFile(certificateInputFile, "AlwaysEncryptedCert");
-//        readFromFile(javaKeyStoreInputFile, "Alias name");
+//        readFromFile(certificateInputFile, "AlwaysEncryptedCert");  TODO: Not testing with windows certificate store now
+        readFromFile(javaKeyStoreInputFile, "Alias name");
         con =  (SQLServerConnection) DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
         Utils.dropTableIfExists(numericTable, stmt);
         dropCEK();
         dropCMK();  
-        if (OS.contains("windows")){
-            keyStoreName = "MSSQL_CERTIFICATE_STORE";
-            createCMK("MSSQL_CERTIFICATE_STORE",keyPath);
-            certStore = "MSSQL_CERTIFICATE_STORE";
-        }
-        else {         
+//        if (OS.contains("windows")){
+//            keyStoreName = "MSSQL_CERTIFICATE_STORE";
+//            createCMK("MSSQL_CERTIFICATE_STORE",keyPath);
+//            certStore = "MSSQL_CERTIFICATE_STORE";
+//        }
+//        else {         
             keyStoreName = "MSSQL_JAVA_KEYSTORE";
             keyPath = Utils.getCurrentClassPath() + "clientcert.jks";
             storeProvider = new SQLServerColumnEncryptionJavaKeyStoreProvider(keyPath, secretstrJks.toCharArray());
@@ -90,7 +90,7 @@ public class AESetup extends AbstractTest {
             stmt = con.createStatement(); 
             createCMK("MSSQL_JAVA_KEYSTORE", javaKeyAliases);
             certStore = "MSSQL_JAVA_KEYSTORE";
-        }
+//        }
                 
                   
     }
@@ -99,9 +99,7 @@ public class AESetup extends AbstractTest {
     private static void readFromFile(String inputFile, String lookupValue){
         try {
             File f = new File(filePath + inputFile);
-
             BufferedReader b = new BufferedReader(new FileReader(f));
-
             String readLine = "";
             String[] linecontents;
             System.out.println("Reading file using Buffered Reader");
@@ -111,17 +109,17 @@ public class AESetup extends AbstractTest {
 //                if (readLine.trim().contains(lookupValue.trim())){
                   if(readLine.trim().contains(lookupValue)){
                     linecontents = readLine.split(" ");
-//                    System.out.println("OS: " + OS);
-////                    if (OS.contains("windows")){
-                        System.out.println("inside");
-                        System.out.println(windowsKeyPath);
-                        System.out.println("thumprint: "+ linecontents[0]);
-                        keyPath = windowsKeyPath;
-                        thumbprint = linecontents[0];
-                        keyPath += thumbprint;
+////                    System.out.println("OS: " + OS);
+//////                    if (OS.contains("windows")){
+//                        System.out.println("inside");
+//                        System.out.println(windowsKeyPath);
+//                        System.out.println("thumprint: "+ linecontents[0]);
+//                        keyPath = windowsKeyPath;
+//                        thumbprint = linecontents[0];
+//                        keyPath += thumbprint;
 //                    }
 //                    else {
-//                        javaKeyAliases = linecontents[2];
+                        javaKeyAliases = linecontents[2];
 //                    }
                     break;
                 }
