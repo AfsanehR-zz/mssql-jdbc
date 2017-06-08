@@ -66,7 +66,7 @@ public class AESetup extends AbstractTest {
     static void setUpConnection() throws SQLException {
         filePath =   Utils.getCurrentClassPath();     
         readFromFile(certificateInputFile, "CN=AlwaysEncryptedCert");
-        readFromFile(javaKeyStoreInputFile, "Alias name");
+//        readFromFile(javaKeyStoreInputFile, "Alias name");
         con =  (SQLServerConnection) DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
         Utils.dropTableIfExists(numericTable, stmt);
@@ -74,8 +74,8 @@ public class AESetup extends AbstractTest {
         dropCMK();  
         if (OS.contains("windows")){
             keyStoreName = "MSSQL_CERTIFICATE_STORE";
-            createCMK("MSSQL_CERTIFICATE_STORE",windowsKeyPath);
-            certStore = "MSSQL_JAVA_KEYSTORE";
+            createCMK("MSSQL_CERTIFICATE_STORE",keyPath);
+            certStore = "MSSQL_CERTIFICATE_STORE";
         }
         else {         
             keyStoreName = "MSSQL_JAVA_KEYSTORE";
@@ -110,7 +110,7 @@ public class AESetup extends AbstractTest {
                 System.out.println(readLine);
                 if (readLine.contains(lookupValue)){
                     linecontents = readLine.split(" ");
-                    if (!OS.contains("windows")){
+                    if (OS.contains("windows")){
                         keyPath = windowsKeyPath;
                         thumbprint = linecontents[0];
                         keyPath += thumbprint;
