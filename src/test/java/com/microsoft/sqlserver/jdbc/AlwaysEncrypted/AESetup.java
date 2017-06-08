@@ -67,17 +67,12 @@ public class AESetup extends AbstractTest {
         filePath =   Utils.getCurrentClassPath();     
         readFromFile(certificateInputFile, "CN=AlwaysEncryptedCert");
         readFromFile(javaKeyStoreInputFile, "Alias name");
-//        Properties info = new Properties();
-//        info.setProperty("ColumnEncryptionSetting", "Enabled");
-//        info.setProperty("keyStoreAuthentication", "JavaKeyStorePassword");
-//        info.setProperty("keyStoreLocation", keyPath);
-//        info.setProperty("keyStoreSecret", secretstrJks);
         con =  (SQLServerConnection) DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
         Utils.dropTableIfExists(numericTable, stmt);
         dropCEK();
         dropCMK();  
-        if (!OS.contains("windows")){
+        if (OS.contains("windows")){
             keyStoreName = "MSSQL_CERTIFICATE_STORE";
             createCMK("MSSQL_CERTIFICATE_STORE",windowsKeyPath);
             certStore = "MSSQL_JAVA_KEYSTORE";
