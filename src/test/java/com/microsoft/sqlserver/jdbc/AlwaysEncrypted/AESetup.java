@@ -65,14 +65,14 @@ public class AESetup extends AbstractTest {
     @BeforeAll
     static void setUpConnection() throws SQLException {
         filePath =   Utils.getCurrentClassPath();     
-//        readFromFile(certificateInputFile, "CN=AlwaysEncryptedCert");
-        readFromFile(javaKeyStoreInputFile, "Alias name");
+        readFromFile(certificateInputFile, "AlwaysEncryptedCert");
+//        readFromFile(javaKeyStoreInputFile, "Alias name");
         con =  (SQLServerConnection) DriverManager.getConnection(connectionString);
         stmt = con.createStatement(); 
         Utils.dropTableIfExists(numericTable, stmt);
         dropCEK();
         dropCMK();  
-        if (!OS.contains("windows")){
+        if (OS.contains("windows")){
             keyStoreName = "MSSQL_CERTIFICATE_STORE";
             createCMK("MSSQL_CERTIFICATE_STORE",keyPath);
             certStore = "MSSQL_CERTIFICATE_STORE";
@@ -113,15 +113,15 @@ public class AESetup extends AbstractTest {
                     linecontents = readLine.split(" ");
 //                    System.out.println("OS: " + OS);
 ////                    if (OS.contains("windows")){
-//                        System.out.println("inside");
-//                        System.out.println(windowsKeyPath);
-//                        System.out.println("thumprint: "+ linecontents[0]);
-//                        keyPath = windowsKeyPath;
-//                        thumbprint = linecontents[0];
-//                        keyPath += thumbprint;
+                        System.out.println("inside");
+                        System.out.println(windowsKeyPath);
+                        System.out.println("thumprint: "+ linecontents[0]);
+                        keyPath = windowsKeyPath;
+                        thumbprint = linecontents[0];
+                        keyPath += thumbprint;
 //                    }
 //                    else {
-                        javaKeyAliases = linecontents[2];
+//                        javaKeyAliases = linecontents[2];
 //                    }
                     break;
                 }
