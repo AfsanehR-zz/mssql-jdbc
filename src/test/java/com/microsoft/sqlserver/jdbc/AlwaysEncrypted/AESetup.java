@@ -108,20 +108,20 @@ public class AESetup extends AbstractTest {
 
             while ((readLine = b.readLine()) != null) {
                 System.out.println(readLine);
-                System.out.println("lookp value" + lookupValue);
                 if (readLine.contains(lookupValue)){
                     linecontents = readLine.split(" ");
-                    if (OS.contains("windows")){
+                    System.out.println("OS: " + OS);
+//                    if (OS.contains("windows")){
                         System.out.println("inside");
                         System.out.println(windowsKeyPath);
                         System.out.println("thumprint: "+ linecontents[0]);
                         keyPath = windowsKeyPath;
                         thumbprint = linecontents[0];
                         keyPath += thumbprint;
-                    }
-                    else {
-                        javaKeyAliases = linecontents[2];
-                    }
+//                    }
+//                    else {
+//                        javaKeyAliases = linecontents[2];
+//                    }
                     break;
                 }
             }
