@@ -19,10 +19,10 @@ install:
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
   - ps: $path = 'cert:\CurrentUser\My\' + $cert.thumbprint
   - ps: $certificate = Export-PfxCertificate -cert $path -FilePath cert.pfx -Password $pwd 
-  - ps: keytool -importkeystore -srckeystore $certificate -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS -srcstorepass password -deststorepass password   
-  - ps: cd..
 
 build_script:
+  - keytool -importkeystore -srckeystore $certificate -srcstoretype pkcs12 -destkeystore clientcert.jks -deststoretype JKS -srcstorepass password -deststorepass password   
+  - cd ..
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
 test_script:
