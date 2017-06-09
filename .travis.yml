@@ -18,8 +18,8 @@ install:
   - cd AE_Certificates
   - openssl req -newkey rsa:2048 -x509 -keyout cakey.pem -out cacert.pem -days 3650 -subj "/C=US/ST=XX/L=XX/O=The JDBC Project/OU=QA/CN=localhost" -nodes
   - openssl pkcs12 -export -in cacert.pem -inkey cakey.pem -out identity.p12 -password pass:password
-  - keytool -importkeystore -destkeystore identity.jks -deststorepass password -srckeystore identity.p12 -srcstoretype PKCS12 -srcstorepass password
-  - keytool -list -v -keystore identity.jks -storepass "password" > JavaKeyStore.txt
+  - keytool -importkeystore -destkeystore clientcert.jks -deststorepass password -srckeystore identity.p12 -srcstoretype PKCS12 -srcstorepass password
+  - keytool -list -v -keystore clientcert.jks -storepass "password" > JavaKeyStore.txt
   - cd ..
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
