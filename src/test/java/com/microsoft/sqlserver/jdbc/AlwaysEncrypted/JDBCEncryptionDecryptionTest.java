@@ -50,7 +50,6 @@ public class JDBCEncryptionDecryptionTest extends AESetup {
         assumeTrue(13 <= new DBConnection(connectionString).getServerVersion(), "Aborting test case as SQL Server version is not compatible with Always encrypted ");
 
         try {
-            System.out.println("inside test:" + keyPath);
             Properties info = new Properties();
             info.setProperty("ColumnEncryptionSetting", "Enabled");
             info.setProperty("keyStoreAuthentication", "JavaKeyStorePassword");

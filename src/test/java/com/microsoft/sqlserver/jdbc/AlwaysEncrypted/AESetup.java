@@ -28,6 +28,7 @@ import com.microsoft.sqlserver.jdbc.SQLServerConnection;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import com.microsoft.sqlserver.testframework.AbstractTest;
 import com.microsoft.sqlserver.testframework.Utils;
+import static org.junit.jupiter.api.Assertions.fail;
 
 @RunWith(JUnitPlatform.class)
 public class AESetup extends AbstractTest {
@@ -111,10 +112,9 @@ public class AESetup extends AbstractTest {
 
         try {
             stmt.execute(sql);
-            System.out.println("Table created!");
         }
         catch (SQLException e) {
-            System.out.println(e.getMessage());
+            fail(e.toString());
         }
     }
 
