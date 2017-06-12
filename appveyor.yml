@@ -14,6 +14,7 @@ install:
   - ps: choco pack
   - ps: choco install jce -fdv -s . -y -failonstderr
   - ps: cd..
+  - ps: mkdir AE_Certificates
   - ps: cd AE_Certificates
   - ps: $cert = New-SelfSignedCertificate -dns "AlwaysEncryptedCert" -CertStoreLocation Cert:CurrentUser\My  
   - ps: $pwd = ConvertTo-SecureString -String "password" -Force -AsPlainText
