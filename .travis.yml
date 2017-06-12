@@ -24,7 +24,7 @@ before_install:
   
 install: 
   - cd AE_Certificates
-  - openssl req -newkey rsa:2048 -x509 -keyout cakey.pem -out cacert.pem -days 3650 -subj "/C=US/ST=XX/L=XX/O=XX/OU=XX/CN=XX" -nodes
+  - openssl req -newkey rsa:2048 -x509 -keyout cakey.pem -out cacert.pem -days 3650 -subj "/C=US/ST=WA/L=Redmond/O=Microsoft Corporation/OU=SQL Server/CN=JDBC Driver" -nodes
   - openssl pkcs12 -export -in cacert.pem -inkey cakey.pem -out identity.p12 -password pass:password
   - keytool -importkeystore -destkeystore clientcert.jks -deststorepass password -srckeystore identity.p12 -srcstoretype PKCS12 -srcstorepass password
   - keytool -list -v -keystore clientcert.jks -storepass "password" > JavaKeyStore.txt
