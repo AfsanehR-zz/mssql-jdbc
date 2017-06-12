@@ -18,9 +18,11 @@ env:
 cache:
  directories:
   - $HOME/.m2
-
+  
+before_install:
+  - mkdir AE_Certificates
+  
 install: 
-  -	mkdir AE_Certificates
   - cd AE_Certificates
   - openssl req -newkey rsa:2048 -x509 -keyout cakey.pem -out cacert.pem -days 3650 -subj "/C=/ST=/L=/O=/OU=/CN=" -nodes
   - openssl pkcs12 -export -in cacert.pem -inkey cakey.pem -out identity.p12 -password pass:password
