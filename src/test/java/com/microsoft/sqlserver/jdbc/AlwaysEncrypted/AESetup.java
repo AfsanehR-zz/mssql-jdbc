@@ -21,15 +21,22 @@ import javax.xml.bind.DatatypeConverter;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
+import org.opentest4j.TestAbortedException;
 
 import com.microsoft.sqlserver.jdbc.SQLServerColumnEncryptionJavaKeyStoreProvider;
 import com.microsoft.sqlserver.jdbc.SQLServerColumnEncryptionKeyStoreProvider;
 import com.microsoft.sqlserver.jdbc.SQLServerConnection;
 import com.microsoft.sqlserver.jdbc.SQLServerException;
 import com.microsoft.sqlserver.testframework.AbstractTest;
+import com.microsoft.sqlserver.testframework.DBConnection;
 import com.microsoft.sqlserver.testframework.Utils;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+/**
+ * Setup for Always Encrypted test
+ *
+ */
 @RunWith(JUnitPlatform.class)
 public class AESetup extends AbstractTest {
 
@@ -52,11 +59,14 @@ public class AESetup extends AbstractTest {
 
     /**
      * Create connection, statement and generate path of resource file
-     * 
-     * @throws SQLException
+     * @throws Exception 
+     * @throws TestAbortedException 
      */
     @BeforeAll
-    static void setUpConnection() throws SQLException {
+    static void setUpConnection() throws TestAbortedException, Exception {
+        assumeTrue(13 <= new DBConnection(connectionString).getServerVersion(),
+                "Aborting test case as SQL Server version is not compatible with Always encrypted ");
+
         readFromFile(javaKeyStoreInputFile, "Alias name");
         con = (SQLServerConnection) DriverManager.getConnection(connectionString);
         stmt = con.createStatement();
@@ -80,15 +90,16 @@ public class AESetup extends AbstractTest {
     }
 
     private static void readFromFile(String inputFile,
-            String lookupValue) {
+            String lookupValue) throws IOException {
+        BufferedReader buffer = null;
         filePath = Utils.getCurrentClassPath();
         try {
             File f = new File(filePath + inputFile);
-            BufferedReader b = new BufferedReader(new FileReader(f));
+            buffer = new BufferedReader(new FileReader(f));
             String readLine = "";
             String[] linecontents;
 
-            while ((readLine = b.readLine()) != null) {
+            while ((readLine = buffer.readLine()) != null) {
                 if (readLine.trim().contains(lookupValue)) {
                     linecontents = readLine.split(" ");                  
                     javaKeyAliases = linecontents[2];
@@ -98,11 +109,19 @@ public class AESetup extends AbstractTest {
 
         }
         catch (IOException e) {
-            e.printStackTrace();
+            fail(e.toString());;
+        }
+        finally{
+            if (null != buffer){
+                buffer.close();
+            }
         }
 
     }
 
+    /**
+     * Creating numeric table 
+     */
     static void createNumericTable() {
         String sql = "create table " + numericTable + " (" + "PlainSmallint smallint null,"
                 + "RandomizedSmallint smallint ENCRYPTED WITH (ENCRYPTION_TYPE = RANDOMIZED, ALGORITHM = 'AEAD_AES_256_CBC_HMAC_SHA_256', COLUMN_ENCRYPTION_KEY = "
@@ -118,6 +137,12 @@ public class AESetup extends AbstractTest {
         }
     }
 
+    /**
+     * Create column master key
+     * @param keyStoreName
+     * @param keyPath
+     * @throws SQLException
+     */
     private static void createCMK(String keyStoreName,
             String keyPath) throws SQLException {
         String sql = " if not exists (SELECT name from sys.column_master_keys where name='" + cmkName + "')" + " begin" + " CREATE COLUMN MASTER KEY "
@@ -125,6 +150,12 @@ public class AESetup extends AbstractTest {
         stmt.execute(sql);
     }
 
+    /**
+     * Create column encryption key
+     * @param storeProvider
+     * @param certStore
+     * @throws SQLException
+     */
     static void createCEK(SQLServerColumnEncryptionKeyStoreProvider storeProvider,
             String certStore) throws SQLException {
         String letters = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -141,15 +172,25 @@ public class AESetup extends AbstractTest {
                     + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = " + encryptedValue + ")" + ";";
 
         }
-        connection.createStatement().execute(cekSql);
+        stmt.execute(cekSql);
     }
 
+    /**
+     * Dropping column encryption key
+     * @throws SQLServerException
+     * @throws SQLException
+     */
     static void dropCEK() throws SQLServerException, SQLException {
         String cekSql = " if exists (SELECT name from sys.column_encryption_keys where name='" + cekName + "')" + " begin"
                 + " drop column encryption key " + cekName + " end";
         stmt.execute(cekSql);
     }
 
+    /**
+     * Dropping column master key
+     * @throws SQLServerException
+     * @throws SQLException
+     */
     static void dropCMK() throws SQLServerException, SQLException {
         String cekSql = " if exists (SELECT name from sys.column_master_keys where name='" + cmkName + "')" + " begin" + " drop column master key "
                 + cmkName + " end";

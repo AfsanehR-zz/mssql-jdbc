@@ -83,6 +83,7 @@ public abstract class AbstractTest {
         logger.info("In AbstractTest:setup");
 
         try {
+            connectionString = "jdbc:sqlserver://sql-2k16-01.galaxy.ad;userName=sa;password=Moonshine4me;database=test;";
             Assertions.assertNotNull(connectionString, "Connection String should not be null");
             connection = PrepUtil.getConnection(connectionString, info);
 
