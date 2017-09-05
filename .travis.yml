@@ -2,7 +2,7 @@
 
 language: java
 jdk:
-  - oraclejdk8
+  - oracle-java9-installer
 
 services:
   - docker
