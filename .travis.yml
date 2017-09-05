@@ -2,8 +2,13 @@
 
 language: java
 jdk:
-  - oracle-java9-installer
+  - oraclejdk8
 
+addons:
+ apt:
+   packages:
+     - oracle-java9-installer
+     
 services:
   - docker
 
@@ -20,6 +25,10 @@ cache:
   - $HOME/.m2
   
 before_install:
+  - remove_dir_from_path $JAVA_HOME/bin
+  - export JAVA_HOME=/usr/lib/jvm/java-9-oracle
+  - export PATH=$JAVA_HOME/bin:$PATH
+  - java -version
   - mkdir AE_Certificates
   
 install: 
