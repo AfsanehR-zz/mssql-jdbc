@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.util.Arrays;
 import java.util.Random;
 
-//import javax.xml.bind.DatatypeConverter;
+import javax.xml.bind.DatatypeConverter;
 
 import org.junit.jupiter.api.Test;
 import org.junit.platform.runner.JUnitPlatform;
@@ -46,7 +46,7 @@ public class DriverVersionTest extends AbstractTest {
                 "Aborting test case as test is not compatible with Java 9! ");
         // the original way to create version byte array
         String interfaceLibVersion = generateInterfaceLibVersion();
-        byte originalVersionBytes[] = interfaceLibVersion.getBytes();
+        byte originalVersionBytes[] = DatatypeConverter.parseHexBinary(interfaceLibVersion);
 
         String originalBytes = Arrays.toString(originalVersionBytes);
 

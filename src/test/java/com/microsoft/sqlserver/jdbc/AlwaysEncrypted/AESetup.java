@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Date;
 import java.sql.DriverManager;
 import java.sql.JDBCType;
@@ -719,8 +720,13 @@ public class AESetup extends AbstractTest {
         String cekSql = null;
         byte[] key = storeProvider.encryptColumnEncryptionKey(javaKeyAliases, "RSA_OAEP", valuesDefault);
         cekSql = "CREATE COLUMN ENCRYPTION KEY " + cekName + " WITH VALUES " + "(COLUMN_MASTER_KEY = " + cmkName
-                + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = 0x" + new String(key) + ")" + ";";
+                + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = 0x" + printHexBinary(key) + ")" + ";";
         stmt.execute(cekSql);
+    }
+    
+    private static String printHexBinary(byte[] data) {
+        BigInteger bi = new BigInteger(1, data);
+        return String.format("%0" + (data.length << 1) + "X", bi);
     }
 
     /**
