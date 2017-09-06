@@ -21,7 +21,7 @@ import java.sql.Timestamp;
 import java.util.LinkedList;
 import java.util.Properties;
 
-import javax.xml.bind.DatatypeConverter;
+//import javax.xml.bind.DatatypeConverter;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -719,7 +719,7 @@ public class AESetup extends AbstractTest {
         String cekSql = null;
         byte[] key = storeProvider.encryptColumnEncryptionKey(javaKeyAliases, "RSA_OAEP", valuesDefault);
         cekSql = "CREATE COLUMN ENCRYPTION KEY " + cekName + " WITH VALUES " + "(COLUMN_MASTER_KEY = " + cmkName
-                + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = 0x" + DatatypeConverter.printHexBinary(key) + ")" + ";";
+                + ", ALGORITHM = 'RSA_OAEP', ENCRYPTED_VALUE = 0x" + new String(key) + ")" + ";";
         stmt.execute(cekSql);
     }
 
