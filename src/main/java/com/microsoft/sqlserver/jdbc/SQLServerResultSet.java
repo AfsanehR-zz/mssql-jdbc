@@ -1969,7 +1969,7 @@ public class SQLServerResultSet implements ISQLServerResultSet {
         return value;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public BigDecimal getBigDecimal(int columnIndex,
             int scale) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
@@ -1982,7 +1982,7 @@ public class SQLServerResultSet implements ISQLServerResultSet {
         return value;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public BigDecimal getBigDecimal(String columnName,
             int scale) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
@@ -2630,14 +2630,14 @@ public class SQLServerResultSet implements ISQLServerResultSet {
         return value;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public java.io.InputStream getUnicodeStream(int columnIndex) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getUnicodeStream", columnIndex);
         NotImplemented();
         return null;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public java.io.InputStream getUnicodeStream(String columnName) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getUnicodeStream", columnName);
         NotImplemented();

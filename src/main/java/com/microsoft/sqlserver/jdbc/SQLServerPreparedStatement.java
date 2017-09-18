@@ -2378,7 +2378,7 @@ public class SQLServerPreparedStatement extends SQLServerStatement implements IS
         return tvpName;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public final void setUnicodeStream(int n,
             java.io.InputStream x,
             int length) throws SQLException {

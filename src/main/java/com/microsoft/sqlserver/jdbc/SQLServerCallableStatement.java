@@ -509,7 +509,7 @@ public class SQLServerCallableStatement extends SQLServerPreparedStatement imple
         return value;
     }
 
-    @Deprecated
+    @Deprecated(since="1.2")
     public BigDecimal getBigDecimal(int parameterIndex,
             int scale) throws SQLException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
