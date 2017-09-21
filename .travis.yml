@@ -1,8 +1,16 @@
 ﻿sudo: required
 
 language: java
-jdk:
-  - oraclejdk8
+sudo: false
+dist: trusty
+jdk: oraclejdk9
+#jdk:
+ # - oraclejdk8
+
+addons:
+ apt:
+   packages:
+     - oracle-java9-installer
 
 services:
   - docker
@@ -29,8 +37,8 @@ install:
   - keytool -importkeystore -destkeystore clientcert.jks -deststorepass password -srckeystore identity.p12 -srcstoretype PKCS12 -srcstorepass password
   - keytool -list -v -keystore clientcert.jks -storepass "password" > JavaKeyStore.txt
   - cd ..
-  - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild41
   - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild42
+  - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -Pbuild43
 
 before_script:
   - docker pull microsoft/mssql-server-linux
@@ -39,6 +47,6 @@ before_script:
 script: 
   - docker ps -a
   
-##Test for JDBC Specification 41 & 42 and submit coverage report.
-  - mvn test -B -Pbuild41 jacoco:report && bash <(curl -s https://codecov.io/bash) -cF JDBC41
+##Test for JDBC Specification 42 & 43 and submit coverage report.
   - mvn test -B -Pbuild42 jacoco:report && bash <(curl -s https://codecov.io/bash) -cF JDBC42
+  - mvn test -B -Pbuild43 jacoco:report && bash <(curl -s https://codecov.io/bash) -cF JDBC43
