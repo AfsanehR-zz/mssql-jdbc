@@ -8,12 +8,16 @@
 
 package com.microsoft.sqlserver.jdbc;
 
+import java.sql.ConnectionBuilder;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.ShardingKeyBuilder;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.naming.Reference;
 import javax.sql.XAConnection;
+import javax.sql.XAConnectionBuilder;
 import javax.sql.XADataSource;
 
 /**
@@ -99,6 +103,16 @@ public final class SQLServerXADataSource extends SQLServerConnectionPoolDataSour
         if (loggerExternal.isLoggable(Level.FINER))
             loggerExternal.exiting(getClassNameLogging(), "getReference", ref);
         return ref;
+    }
+    
+    public ShardingKeyBuilder createShardingKeyBuilder() throws SQLException {
+        DriverJDBCVersion.checkSupportsJDBC43();
+        throw new SQLFeatureNotSupportedException("createShardingKeyBuilder not implemented");
+    }
+    
+    public XAConnectionBuilder createXAConnectionBuilder() throws SQLException {
+        DriverJDBCVersion.checkSupportsJDBC43();
+        throw new SQLFeatureNotSupportedException("createXAConnectionBuilder not implemented");
     }
 
     private Object writeReplace() throws java.io.ObjectStreamException {

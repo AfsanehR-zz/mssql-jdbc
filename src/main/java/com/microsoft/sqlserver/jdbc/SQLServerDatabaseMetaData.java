@@ -396,6 +396,14 @@ public final class SQLServerDatabaseMetaData implements java.sql.DatabaseMetaDat
 
         return false;
     }
+    
+    
+    public boolean supportsSharding() throws SQLException {
+        DriverJDBCVersion.checkSupportsJDBC43();
+        checkClosed();
+        
+        return false;       
+    }
 
     /* L0 */ public java.sql.ResultSet getCatalogs() throws SQLServerException {
         if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {

@@ -141,7 +141,7 @@
 
 	<profiles>
 		<profile>
-			<id>build41</id>
+			<id>build42</id>
 			<build>
 				<plugins>
 					<plugin>
@@ -149,10 +149,11 @@
 						<version>3.6.0</version>
 						<configuration>
 							<excludes>
-								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc42.java</exclude>
+								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc43.java</exclude>
+								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc41.java</exclude>
 							</excludes>
-							<source>1.7</source>
-							<target>1.7</target> 
+							<source>1.8</source>
+							<target>1.8</target> 
 						</configuration>
 					</plugin>
 					<plugin>
@@ -160,7 +161,7 @@
 						<artifactId>maven-jar-plugin</artifactId>
 						<version>3.0.2</version>
 						<configuration>
-							<finalName>${project.artifactId}-${project.version}.jre7-preview</finalName>
+							<finalName>${project.artifactId}-${project.version}.jre8-preview</finalName>
 							<archive>
 								<manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
 							</archive>
@@ -172,7 +173,7 @@
 		</profile>
 
 		<profile>
-			<id>build42</id>
+			<id>build43</id>
 			<activation>
 				<activeByDefault>true</activeByDefault>
 			</activation>
@@ -183,10 +184,11 @@
 						<version>3.6.0</version>
 						<configuration>
 							<excludes>
+								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc42.java</exclude>
 								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc41.java</exclude>
 							</excludes>
-							<source>1.8</source>
-							<target>1.8</target>
+							<source>1.9</source>
+							<target>1.9</target>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -194,7 +196,7 @@
 						<artifactId>maven-jar-plugin</artifactId>
 						<version>3.0.2</version>
 						<configuration>
-							<finalName>${project.artifactId}-${project.version}.jre8-preview</finalName>
+							<finalName>${project.artifactId}-${project.version}.jre9-preview</finalName>
 							<archive>
 								<manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
 							</archive>
@@ -252,7 +254,7 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.7.8</version>
+				<version>0.7.9</version>
 				<executions>
 					<execution>
 						<goals>
@@ -291,7 +293,7 @@
 				  	</executions>
          	</plugin>
 			
-			<plugin>
+			<!-- >plugin>
 				<groupId>org.apache.maven.plugins</groupId>
  				<artifactId>maven-javadoc-plugin</artifactId>
  				<version>2.10.4</version>
@@ -308,7 +310,7 @@
  						</goals>
  					</execution>
  				</executions>
- 			</plugin>
+ 			</plugin -->
 
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
