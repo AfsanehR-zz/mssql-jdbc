@@ -23,10 +23,13 @@ import javax.sql.XAConnection;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
+import org.opentest4j.TestAbortedException;
 
 import com.microsoft.sqlserver.testframework.AbstractTest;
+import com.microsoft.sqlserver.testframework.util.Util;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Tests JDBC 4.3 APIs
@@ -39,11 +42,14 @@ public class JDBC43Test extends AbstractTest {
 
     /**
      * Tests that we are throwing the unsupported exception for connectionBuilder()
+     * @throws SQLException 
+     * @throws TestAbortedException 
      * 
      * @since 1.9
      */
     @Test
-    public void connectionBuilderTest() {
+    public void connectionBuilderTest() throws TestAbortedException, SQLException {
+        assumeTrue(Util.supportJDBC43(connection));
         SQLServerDataSource ds = new SQLServerDataSource();
         try {
             superShardingKey = ds.createShardingKeyBuilder().subkey("EASTERN_REGION", JDBCType.VARCHAR).build();
@@ -70,11 +76,14 @@ public class JDBC43Test extends AbstractTest {
 
     /**
      * Tests that we are throwing the unsupported exception for connectionBuilder()
+     * @throws SQLException 
+     * @throws TestAbortedException 
      * 
      * @since 1.9
      */
     @Test
-    public void xaConnectionBuilderTest() {
+    public void xaConnectionBuilderTest() throws TestAbortedException, SQLException {
+        assumeTrue(Util.supportJDBC43(connection));
         SQLServerXADataSource ds = new SQLServerXADataSource();
         try {
             superShardingKey = ds.createShardingKeyBuilder().subkey("EASTERN_REGION", JDBCType.VARCHAR).build();
@@ -101,10 +110,13 @@ public class JDBC43Test extends AbstractTest {
 
     /**
      * Tests that we are throwing the unsupported exception for createPooledConnectionBuilder()
+     * @throws SQLException 
+     * @throws TestAbortedException 
      * @since 1.9
      */
     @Test
-    public void connectionPoolDataSourceTest() {
+    public void connectionPoolDataSourceTest() throws TestAbortedException, SQLException {
+        assumeTrue(Util.supportJDBC43(connection));
         ConnectionPoolDataSource ds = new SQLServerConnectionPoolDataSource();
         try {
             superShardingKey = ds.createShardingKeyBuilder().subkey("EASTERN_REGION", JDBCType.VARCHAR).build();
