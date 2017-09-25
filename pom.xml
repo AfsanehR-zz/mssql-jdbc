@@ -128,6 +128,12 @@
 			<artifactId>commons-dbcp2 </artifactId>
 			<version>2.1.1</version>
 			<scope>test</scope>
+		</dependency>	
+		
+		<dependency>
+   		 <groupId>javax.xml.bind</groupId>
+  		  <artifactId>jaxb-api</artifactId>
+   		 <version>2.3.0</version>
 		</dependency>
   	<!-- 
 	<dependency>
@@ -185,8 +191,8 @@
 							<excludes>
 								<exclude>**/com/microsoft/sqlserver/jdbc/SQLServerJdbc41.java</exclude>
 							</excludes>
-							<source>1.8</source>
-							<target>1.8</target>
+							<source>1.9</source>
+							<target>1.9</target>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -291,7 +297,7 @@
 				  	</executions>
          	</plugin>
 			
-			<plugin>
+			<!-- plugin>
 				<groupId>org.apache.maven.plugins</groupId>
  				<artifactId>maven-javadoc-plugin</artifactId>
  				<version>2.10.4</version>
@@ -308,7 +314,7 @@
  						</goals>
  					</execution>
  				</executions>
- 			</plugin>
+ 			</plugin> -->
 
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
