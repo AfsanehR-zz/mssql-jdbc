@@ -239,7 +239,7 @@ final class TDS {
     static final byte PKT_LOGON70 = 16; // 0x10
     static final byte PKT_SSPI = 17;
     static final byte PKT_PRELOGIN = 18; // 0x12
-    static final byte PKT_FEDAUTH_TOKEN_MESSAGE = 8;	// Authentication token for federated authentication
+    static final byte PKT_FEDAUTH_TOKEN_MESSAGE = 8;    // Authentication token for federated authentication
 
     static final byte STATUS_NORMAL = 0x00;
     static final byte STATUS_BIT_EOM = 0x01;
@@ -4499,8 +4499,8 @@ final class TDSWriter {
             writeRPCNameValType(sName, bOut, TDSType.NVARCHAR);
 
             // Handle Yukon v*max type header here.
-            writeVMaxHeader(nValueLen,	// Length
-                    bValueNull,	// Is null?
+            writeVMaxHeader(nValueLen,  // Length
+                    bValueNull, // Is null?
                     collation);
 
             // Send the data.
@@ -4566,7 +4566,7 @@ final class TDSWriter {
             writeString(value.getDbNameTVP());
         }
         else
-            writeByte((byte) 0x00);	// empty DB name
+            writeByte((byte) 0x00); // empty DB name
 
         // Schema where TVP type resides
         if (null != value.getOwningSchemaNameTVP()) {
@@ -4574,7 +4574,7 @@ final class TDSWriter {
             writeString(value.getOwningSchemaNameTVP());
         }
         else
-            writeByte((byte) 0x00);	// empty Schema name
+            writeByte((byte) 0x00); // empty Schema name 
 
         // TVP type name
         if (null != value.getTVPName()) {
@@ -4582,7 +4582,7 @@ final class TDSWriter {
             writeString(value.getTVPName());
         }
         else
-            writeByte((byte) 0x00);	// empty TVP name
+            writeByte((byte) 0x00); // empty TVP name
 
         if (!value.isNull()) {
             writeTVPColumnMetaData(value);
@@ -6021,8 +6021,8 @@ final class TDSWriter {
             }
             else if (SSType.DATETIME2 == ssType) {
                 // for Max value, does not round up, do casting instead.
-                if (3652058 == daysIntoCE) {	// 9999-12-31
-                    if (864000000000L == scaledNanos) {	// 24:00:00 in nanoseconds
+                if (3652058 == daysIntoCE) {    // 9999-12-31
+                    if (864000000000L == scaledNanos) { // 24:00:00 in nanoseconds
                         // does not round up
                         scaledNanos = (((long) Nanos.PER_SECOND * secondsSinceMidnight + getRoundedSubSecondNanos(subSecondNanos)) / divisor)
                                 * divisor / 100;
@@ -6042,8 +6042,8 @@ final class TDSWriter {
             }
             else {
                 // for Max value, does not round up, do casting instead.
-                if (3652058 == daysIntoCE) {	// 9999-12-31
-                    if (864000000000L == scaledNanos) {	// 24:00:00 in nanoseconds
+                if (3652058 == daysIntoCE) {    // 9999-12-31
+                    if (864000000000L == scaledNanos) { // 24:00:00 in nanoseconds
                         // does not round up
                         scaledNanos = (((long) Nanos.PER_SECOND * secondsSinceMidnight + getRoundedSubSecondNanos(subSecondNanos)) / divisor)
                                 * divisor / 100;
@@ -6267,7 +6267,7 @@ final class TDSWriter {
             writeRPCNameValType(sName, bOut, TDSType.NVARCHAR);
 
             // Handle Yukon v*max type header here.
-            writeVMaxHeader((DataTypes.UNKNOWN_STREAM_LENGTH == reLength) ? DataTypes.UNKNOWN_STREAM_LENGTH : 2 * reLength,	// Length (in bytes)
+            writeVMaxHeader((DataTypes.UNKNOWN_STREAM_LENGTH == reLength) ? DataTypes.UNKNOWN_STREAM_LENGTH : 2 * reLength, // Length (in bytes)
                     false, collation);
         }
 
@@ -6357,7 +6357,8 @@ final class TDSReaderMark {
 final class TDSReader {
     private final static Logger logger = Logger.getLogger("com.microsoft.sqlserver.jdbc.internals.TDS.Reader");
     final private String traceID;
-
+    private TimeoutTimer tcpKeepAliveTimeoutTimer;
+    
     final public String toString() {
         return traceID;
     }
@@ -6398,6 +6399,7 @@ final class TDSReader {
         this.tdsChannel = tdsChannel;
         this.con = con;
         this.command = command; // may be null
+        this.tcpKeepAliveTimeoutTimer = (con.getCancelTimeoutSeconds()> 0) ? (new TimeoutTimer(con.getCancelTimeoutSeconds(), null, con)) : null;
         // if the logging level is not detailed than fine or more we will not have proper readerids.
         if (logger.isLoggable(Level.FINE))
             traceID = "TDSReader@" + nextReaderID() + " (" + con.toString() + ")";
@@ -6496,7 +6498,12 @@ final class TDSReader {
                 + tdsChannel.numMsgsSent;
 
         TDSPacket newPacket = new TDSPacket(con.getTDSPacketSize());
-
+        if (null != tcpKeepAliveTimeoutTimer) {
+            if (logger.isLoggable(Level.FINEST)) {
+                logger.finest(this.toString() + ":starting timer...");
+            }
+            tcpKeepAliveTimeoutTimer.start();
+        }
         // First, read the packet header.
         for (int headerBytesRead = 0; headerBytesRead < TDS.PACKET_HEADER_SIZE;) {
             int bytesRead = tdsChannel.read(newPacket.header, headerBytesRead, TDS.PACKET_HEADER_SIZE - headerBytesRead);
@@ -6510,7 +6517,14 @@ final class TDSReader {
 
             headerBytesRead += bytesRead;
         }
-
+        
+        // if execution was subject to timeout then stop timing
+        if (null != tcpKeepAliveTimeoutTimer) {
+            if (logger.isLoggable(Level.FINEST)) {
+                logger.finest(this.toString() + ":stopping timer...");
+            }
+            tcpKeepAliveTimeoutTimer.stop();
+        }
         // Header size is a 2 byte unsigned short integer in big-endian order.
         int packetLength = Util.readUnsignedShortBigEndian(newPacket.header, TDS.PACKET_HEADER_MESSAGE_LENGTH);
 
@@ -7118,7 +7132,8 @@ final class TimeoutTimer implements Runnable {
     private final int timeoutSeconds;
     private final TDSCommand command;
     private volatile Future<?> task;
-
+    private final SQLServerConnection con;
+    
     private static final ExecutorService executor = Executors.newCachedThreadPool(new ThreadFactory() {
         private final AtomicReference<ThreadGroup> tgr = new AtomicReference<>();
         private final AtomicInteger threadNumber = new AtomicInteger(0);
@@ -7143,12 +7158,14 @@ final class TimeoutTimer implements Runnable {
     private volatile boolean canceled = false;
 
     TimeoutTimer(int timeoutSeconds,
-            TDSCommand command) {
+            TDSCommand command,
+            SQLServerConnection con) {
         assert timeoutSeconds > 0;
         assert null != command;
 
         this.timeoutSeconds = timeoutSeconds;
         this.command = command;
+        this.con = con;
     }
 
     final void start() {
@@ -7178,16 +7195,25 @@ final class TimeoutTimer implements Runnable {
             Thread.currentThread().interrupt();
             return;
         }
-
-        // If the timer wasn't canceled before it ran out of
-        // time then interrupt the registered command.
+       
         try {
-            command.interrupt(SQLServerException.getErrString("R_queryTimedOut"));
+            // if connection is silently dropped, the query timeout hangs too and does not throw the query timeout exception.
+            // The application hangs until the connection timeout is thrown. In this case, manually terminate the connection.
+            if (null == command) {
+                assert null != con;
+                con.terminate(SQLServerException.DRIVER_ERROR_IO_FAILED, SQLServerException.getErrString("R_connectionIsClosed"));
+            }
+            else {
+                // If the timer wasn't canceled before it ran out of
+                // time then interrupt the registered command.
+                command.interrupt(SQLServerException.getErrString("R_queryTimedOut"));
+            }
         }
         catch (SQLServerException e) {
             // Unfortunately, there's nothing we can do if we
             // fail to time out the request. There is no way
             // to report back what happened.
+            assert null != command;
             command.log(Level.FINE, "Command could not be timed out. Reason: " + e.getMessage());
         }
     }
@@ -7331,7 +7357,7 @@ abstract class TDSCommand {
     TDSCommand(String logContext,
             int timeoutSeconds) {
         this.logContext = logContext;
-        this.timeoutTimer = (timeoutSeconds > 0) ? (new TimeoutTimer(timeoutSeconds, this)) : null;
+        this.timeoutTimer = (timeoutSeconds > 0) ? (new TimeoutTimer(timeoutSeconds, this, null)) : null;
     }
 
     /**

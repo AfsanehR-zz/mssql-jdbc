@@ -462,9 +462,15 @@ public class SQLServerConnection implements ISQLServerConnection {
     }
 
     private int queryTimeoutSeconds;
+    
+    private int cancelTimeoutSeconds;
 
     final int getQueryTimeoutSeconds() {
         return queryTimeoutSeconds;
+    }
+    
+    final int getCancelTimeoutSeconds() {
+        return cancelTimeoutSeconds;
     }
 
     private int socketTimeoutMilliseconds;
@@ -1671,6 +1677,28 @@ public class SQLServerConnection implements ISQLServerConnection {
                 }
                 catch (NumberFormatException e) {
                     MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidQueryTimeout"));
+                    Object[] msgArgs = {activeConnectionProperties.getProperty(sPropKey)};
+                    SQLServerException.makeFromDriverError(this, this, form.format(msgArgs), null, false);
+                }
+            }
+            
+            sPropKey = SQLServerDriverIntProperty.CANCEL_TIMEOUT.toString();
+            int defaultCancelTimeout = SQLServerDriverIntProperty.CANCEL_TIMEOUT.getDefaultValue();
+            cancelTimeoutSeconds = defaultCancelTimeout; // Wait forever
+            if (activeConnectionProperties.getProperty(sPropKey) != null && activeConnectionProperties.getProperty(sPropKey).length() > 0) {
+                try {
+                    int n = new Integer(activeConnectionProperties.getProperty(sPropKey));
+                    if (n >= defaultCancelTimeout) {
+                        cancelTimeoutSeconds = n;
+                    }
+                    else {
+                        MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidCancelTimeout"));
+                        Object[] msgArgs = {activeConnectionProperties.getProperty(sPropKey)};
+                        SQLServerException.makeFromDriverError(this, this, form.format(msgArgs), null, false);
+                    }
+                }
+                catch (NumberFormatException e) {
+                    MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidCancelTimeout"));
                     Object[] msgArgs = {activeConnectionProperties.getProperty(sPropKey)};
                     SQLServerException.makeFromDriverError(this, this, form.format(msgArgs), null, false);
                 }
