@@ -1,9 +1,8 @@
 ﻿sudo: required
 
 language: java
-sudo: false
-dist: trusty
-jdk: oraclejdk9
+jdk:
+  - oraclejdk9
 
 addons:
  apt:
