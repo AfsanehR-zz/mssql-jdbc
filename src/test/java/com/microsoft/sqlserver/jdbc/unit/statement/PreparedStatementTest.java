@@ -177,6 +177,7 @@ public class PreparedStatementTest extends AbstractTest {
 
             // Test behvaior with statement pooling.
             con.setStatementPoolingCacheSize(10);
+            con.setDisableStatementPooling(false);
             this.executeSQL(con,
                     "IF NOT EXISTS (SELECT * FROM sys.messages WHERE message_id = 99586) EXEC sp_addmessage 99586, 16, 'Prepared handle GAH!';");
             // Test with missing handle failures (fake).

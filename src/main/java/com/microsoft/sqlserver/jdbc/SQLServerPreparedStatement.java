@@ -548,7 +548,9 @@ public class SQLServerPreparedStatement extends SQLServerStatement implements IS
                 getNextResult();
             }
             catch (SQLException e) {
-                if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare))
+                PreparedStatementHandle cachedHandle = connection
+                        .getCachedPreparedStatementHandle(new Sha1HashKey(preparedSQL, preparedTypeDefinitions, dbName));
+                if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare) && null == cachedHandle)
                     continue;
                 else
                     throw e;
@@ -2696,8 +2698,10 @@ public class SQLServerPreparedStatement extends SQLServerStatement implements IS
                                 if (connection.isSessionUnAvailable() || connection.rolledBackTransaction())
                                     throw e;
 
+                                PreparedStatementHandle cachedHandle = connection
+                                        .getCachedPreparedStatementHandle(new Sha1HashKey(preparedSQL, preparedTypeDefinitions, dbName));
                                 // Retry if invalid handle exception.
-                                if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare)) {
+                                if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare) && null == cachedHandle) {
                                     // reset number of batches prepare
                                     numBatchesPrepared = numBatchesExecuted;
                                     retry = true;
@@ -2728,7 +2732,9 @@ public class SQLServerPreparedStatement extends SQLServerStatement implements IS
                     }
                 }
                 catch (SQLException e) {
-                    if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare) && connection.isStatementPoolingEnabled()) {
+                    PreparedStatementHandle cachedHandle = connection
+                            .getCachedPreparedStatementHandle(new Sha1HashKey(preparedSQL, preparedTypeDefinitions, dbName));
+                    if (retryBasedOnFailedReuseOfCachedHandle(e, attempt, needsPrepare) && null == cachedHandle) {
                         // Reset number of batches prepared.
                         numBatchesPrepared = numBatchesExecuted;
                         continue;
