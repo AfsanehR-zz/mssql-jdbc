@@ -1,9 +1,6 @@
 /*
- * Microsoft JDBC Driver for SQL Server
- * 
- * Copyright(c) Microsoft Corporation All rights reserved.
- * 
- * This program is made available under the terms of the MIT License. See the LICENSE file in the project root for more information.
+ * Microsoft JDBC Driver for SQL Server Copyright(c) Microsoft Corporation All rights reserved. This program is made
+ * available under the terms of the MIT License. See the LICENSE file in the project root for more information.
  */
 
 package com.microsoft.sqlserver.testframework.sqlType;
@@ -11,12 +8,14 @@ package com.microsoft.sqlserver.testframework.sqlType;
 import java.sql.JDBCType;
 import java.util.concurrent.ThreadLocalRandom;
 
+import com.microsoft.sqlserver.jdbc.TestUtils;
 import com.microsoft.sqlserver.testframework.DBCoercion;
-import com.microsoft.sqlserver.testframework.Utils;
+import com.microsoft.sqlserver.testframework.DBConstants;
+
 
 /*
- * Restricting the size of char/binary to 2000 and nchar to 1000 to accommodate SQL Sever limitation of having of having maximum allowable table row
- * size to 8060
+ * Restricting the size of char/binary to 2000 and nchar to 1000 to accommodate SQL Sever limitation of having of having
+ * maximum allowable table row size to 8060
  */
 public class SqlChar extends SqlType {
 
@@ -26,18 +25,22 @@ public class SqlChar extends SqlType {
         this("char", JDBCType.CHAR, 2000);
     }
 
-    SqlChar(String name,
-            JDBCType jdbctype,
-            int precision) {
-        super(name, jdbctype, precision, 0, SqlTypeValue.CHAR.minValue, SqlTypeValue.CHAR.maxValue, SqlTypeValue.CHAR.nullValue,
-                VariableLengthType.Precision, String.class);
+    SqlChar(String name, JDBCType jdbctype, int precision) {
+        super(name, jdbctype, precision, 0, SqlTypeValue.CHAR.minValue, SqlTypeValue.CHAR.maxValue,
+                SqlTypeValue.CHAR.nullValue, VariableLengthType.Precision, String.class);
         generatePrecision();
-        coercions.add(new DBCoercion(Object.class, new int[] {DBCoercion.GET, DBCoercion.UPDATE, DBCoercion.UPDATEOBJECT, DBCoercion.SET,
-                DBCoercion.SETOBJECT, DBCoercion.GETPARAM, DBCoercion.REG}));
-        coercions.add(new DBCoercion(String.class, new int[] {DBCoercion.GET, DBCoercion.UPDATE, DBCoercion.UPDATEOBJECT, DBCoercion.SET,
-                DBCoercion.SETOBJECT, DBCoercion.GETPARAM, DBCoercion.REG, DBCoercion.CHAR}));
-        coercions.add(new DBCoercion(Utils.DBCharacterStream.class, new int[] {DBCoercion.GET, DBCoercion.UPDATE, DBCoercion.UPDATEOBJECT,
-                DBCoercion.SET, DBCoercion.SETOBJECT, DBCoercion.GETPARAM, DBCoercion.REG, DBCoercion.STREAM, DBCoercion.CHAR}));
+        coercions.add(new DBCoercion(Object.class,
+                new int[] {DBConstants.GET_COERCION, DBConstants.UPDATE_COERCION, DBConstants.UPDATEOBJECT_COERCION,
+                        DBConstants.SET_COERCION, DBConstants.SETOBJECT_COERCION, DBConstants.GETPARAM_COERCION,
+                        DBConstants.REG_COERCION}));
+        coercions.add(new DBCoercion(String.class,
+                new int[] {DBConstants.GET_COERCION, DBConstants.UPDATE_COERCION, DBConstants.UPDATEOBJECT_COERCION,
+                        DBConstants.SET_COERCION, DBConstants.SETOBJECT_COERCION, DBConstants.GETPARAM_COERCION,
+                        DBConstants.REG_COERCION, DBConstants.CHAR_COERCION}));
+        coercions.add(new DBCoercion(TestUtils.DBCharacterStream.class,
+                new int[] {DBConstants.GET_COERCION, DBConstants.UPDATE_COERCION, DBConstants.UPDATEOBJECT_COERCION,
+                        DBConstants.SET_COERCION, DBConstants.SETOBJECT_COERCION, DBConstants.GETPARAM_COERCION,
+                        DBConstants.REG_COERCION, DBConstants.STREAM_COERCION, DBConstants.CHAR_COERCION}));
     }
 
     public Object createdata() {
@@ -57,14 +60,12 @@ public class SqlChar extends SqlType {
      * @param charSet
      * @return
      */
-    protected static String buildCharOrNChar(int columnLength,
-            String charSet) {
+    protected static String buildCharOrNChar(int columnLength, String charSet) {
         int columnLengthInt = columnLength;
         return buildRandomString(columnLengthInt, charSet);
     }
 
-    private static String buildRandomString(int length,
-            String charSet) {
+    private static String buildRandomString(int length, String charSet) {
         StringBuffer sb = new StringBuffer();
         for (int i = 0; i < length; i++) {
             char c = pickRandomChar(charSet);

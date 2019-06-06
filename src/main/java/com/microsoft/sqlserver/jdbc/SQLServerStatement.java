@@ -1,9 +1,6 @@
 /*
- * Microsoft JDBC Driver for SQL Server
- * 
- * Copyright(c) Microsoft Corporation All rights reserved.
- * 
- * This program is made available under the terms of the MIT License. See the LICENSE file in the project root for more information.
+ * Microsoft JDBC Driver for SQL Server Copyright(c) Microsoft Corporation All rights reserved. This program is made
+ * available under the terms of the MIT License. See the LICENSE file in the project root for more information.
  */
 
 package com.microsoft.sqlserver.jdbc;
@@ -12,8 +9,10 @@ import static com.microsoft.sqlserver.jdbc.SQLServerConnection.getCachedParsedSQ
 import static com.microsoft.sqlserver.jdbc.SQLServerConnection.parseAndCacheSQL;
 
 import java.sql.BatchUpdateException;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.text.MessageFormat;
@@ -27,32 +26,40 @@ import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.microsoft.sqlserver.jdbc.SQLServerConnection.Sha1HashKey;
+import com.microsoft.sqlserver.jdbc.SQLServerConnection.CityHash128Key;
+
 
 /**
- * SQLServerStatment provides the basic implementation of JDBC statement functionality. It also provides a number of base class implementation methods
- * for the JDBC prepared statement and callable Statements. SQLServerStatement's basic role is to execute SQL statements and return update counts and
- * resultset rows to the user application.
+ * Provides an implementation of java.sql.Statement JDBC Interface to assist in creating Statements against SQL Server.
+ * It also provides a number of base class implementation methods for the JDBC prepared statement and callable
+ * Statements. SQLServerStatement's basic role is to execute SQL statements and return update counts and resultset rows
+ * to the user application.
  *
- * Documentation for specific public methods that are undocumented can be found under Sun's standard JDBC documentation for class java.sql.Statement.
- * Those methods are part of Sun's standard JDBC documentation and therefore their documentation is not duplicated here.
+ * Documentation for specific public methods that are undocumented can be found under Sun's standard JDBC documentation
+ * for class java.sql.Statement. Those methods are part of Sun's standard JDBC documentation and therefore their
+ * documentation is not duplicated here.
  * <p>
  * Implementation Notes
  * <p>
  * Fetching Result sets
  * <p>
- * The queries first rowset is available immediately after the executeQuery. The first rs.next() does not make a server round trip. For non server
- * side resultsets the entire result set is in the rowset. For server side result sets the number of rows in the rowset is set with nFetchSize
+ * The queries first rowset is available immediately after the executeQuery. The first rs.next() does not make a server
+ * round trip. For non server side resultsets the entire result set is in the rowset. For server side result sets the
+ * number of rows in the rowset is set with nFetchSize
  * <p>
- * The API javadoc for JDBC API methods that this class implements are not repeated here. Please see Sun's JDBC API interfaces javadoc for those
- * details.
+ * The API javadoc for JDBC API methods that this class implements are not repeated here. Please see Sun's JDBC API
+ * interfaces javadoc for those details.
  */
-
 public class SQLServerStatement implements ISQLServerStatement {
+    /**
+     * Always update serialVersionUID when prompted.
+     */
+    private static final long serialVersionUID = -4421134713913331507L;
+
     final static char LEFT_CURLY_BRACKET = 123;
     final static char RIGHT_CURLY_BRACKET = 125;
 
-    private boolean isResponseBufferingAdaptive = false;
+    boolean isResponseBufferingAdaptive = false;
 
     final boolean getIsResponseBufferingAdaptive() {
         return isResponseBufferingAdaptive;
@@ -99,10 +106,13 @@ public class SQLServerStatement implements ISQLServerStatement {
     /**
      * The input and out parameters for statement execution.
      */
-    Parameter[] inOutParam; // Parameters for prepared stmts and stored procedures
+    Parameter[] inOutParam = null; // Parameters for prepared stmts and stored procedures
+
+    /** Return parameter for stored procedure calls */
+    Parameter returnParam;
 
     /**
-     * The statements connection.
+     * The statement's connection.
      */
     final SQLServerConnection connection;
 
@@ -112,16 +122,22 @@ public class SQLServerStatement implements ISQLServerStatement {
     int queryTimeout;
 
     /**
-     * Is closeOnCompletion is enabled? If true statement will be closed when all of its dependent result sets are closed
+     * timeout value for canceling the query timeout
+     */
+    int cancelQueryTimeoutSeconds;
+
+    /**
+     * Is closeOnCompletion is enabled? If true statement will be closed when all of its dependent result sets are
+     * closed
      */
     boolean isCloseOnCompletion = false;
 
     /**
-     * Currently executing or most recently executed TDSCommand (statement cmd, server cursor cmd, ...) subject to cancellation through
-     * Statement.cancel.
+     * Currently executing or most recently executed TDSCommand (statement cmd, server cursor cmd, ...) subject to
+     * cancellation through Statement.cancel.
      *
-     * Note: currentCommand is declared volatile to ensure that the JVM always returns the most recently set value for currentCommand to the
-     * cancelling thread.
+     * Note: currentCommand is declared volatile to ensure that the JVM always returns the most recently set value for
+     * currentCommand to the cancelling thread.
      */
     private volatile TDSCommand currentCommand = null;
     private TDSCommand lastStmtExecCmd = null;
@@ -134,7 +150,8 @@ public class SQLServerStatement implements ISQLServerStatement {
         clearLastResult();
     }
 
-    static final java.util.logging.Logger loggerExternal = java.util.logging.Logger.getLogger("com.microsoft.sqlserver.jdbc.Statement");
+    static final java.util.logging.Logger loggerExternal = java.util.logging.Logger
+            .getLogger("com.microsoft.sqlserver.jdbc.Statement");
     final private String loggingClassName;
     final private String traceID;
 
@@ -143,13 +160,18 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /*
-     * Column Encryption Override. Defaults to the connection setting, in which case it will be Enabled if columnEncryptionSetting = true in the
-     * connection setting, Disabled if false. This may also be used to set other behavior which overrides connection level setting.
+     * Column Encryption Override. Defaults to the connection setting, in which case it will be Enabled if
+     * columnEncryptionSetting = true in the connection setting, Disabled if false. This may also be used to set other
+     * behavior which overrides connection level setting.
      */
     protected SQLServerStatementColumnEncryptionSetting stmtColumnEncriptionSetting = SQLServerStatementColumnEncryptionSetting.UseConnectionSetting;
 
+    protected SQLServerStatementColumnEncryptionSetting getStmtColumnEncriptionSetting() {
+        return stmtColumnEncriptionSetting;
+    }
+
     /**
-     * ExecuteProperties encapsulates a subset of statement property values as they were set at execution time.
+     * Encapsulates a subset of statement property values as they were set at execution time.
      */
     final class ExecuteProperties {
         final private boolean wasResponseBufferingSet;
@@ -186,9 +208,10 @@ public class SQLServerStatement implements ISQLServerStatement {
     /**
      * Executes this Statement using TDSCommand newStmtCmd.
      *
-     * The TDSCommand is assumed to be a statement execution command (StmtExecCmd, PrepStmtExecCmd, PrepStmtBatchExecCmd).
+     * The TDSCommand is assumed to be a statement execution command (StmtExecCmd, PrepStmtExecCmd,
+     * PrepStmtBatchExecCmd).
      */
-    final void executeStatement(TDSCommand newStmtCmd) throws SQLServerException {
+    final void executeStatement(TDSCommand newStmtCmd) throws SQLServerException, SQLTimeoutException {
         // Ensure that any response left over from a previous execution has been
         // completely processed. There may be ENVCHANGEs in that response that
         // we must acknowledge before proceeding.
@@ -202,20 +225,25 @@ public class SQLServerStatement implements ISQLServerStatement {
         try {
             // (Re)execute this Statement with the new command
             executeCommand(newStmtCmd);
-        }
-        finally {
+        } catch (SQLServerException e) {
+            if (e.getDriverErrorCode() == SQLServerException.ERROR_QUERY_TIMEOUT)
+                throw new SQLTimeoutException(e.getMessage(), e.getSQLState(), e.getErrorCode(), e.getCause());
+            else
+                throw e;
+        } finally {
             lastStmtExecCmd = newStmtCmd;
         }
     }
 
     /**
-     * Executes TDSCommand newCommand through this Statement object, allowing it to be cancelled through Statement.cancel().
+     * Executes TDSCommand newCommand through this Statement object, allowing it to be cancelled through
+     * Statement.cancel().
      *
-     * The specified command is typically the one used to execute the statement. But it could also be a server cursor command (fetch, move, close)
-     * generated by a ResultSet that this statement produced.
+     * The specified command is typically the one used to execute the statement. But it could also be a server cursor
+     * command (fetch, move, close) generated by a ResultSet that this statement produced.
      *
-     * This method does not prevent applications from simultaneously executing commands from multiple threads. The assumption is that apps only call
-     * cancel() from another thread while the command is executing.
+     * This method does not prevent applications from simultaneously executing commands from multiple threads. The
+     * assumption is that apps only call cancel() from another thread while the command is executing.
      */
     final void executeCommand(TDSCommand newCommand) throws SQLServerException {
         // Set the new command as the current command so that
@@ -225,7 +253,8 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Flag to indicate that are potentially more results (ResultSets, update counts, or errors) to be processed in the response.
+     * Flag to indicate that are potentially more results (ResultSets, update counts, or errors) to be processed in the
+     * response.
      */
     boolean moreResults = false;
 
@@ -247,7 +276,7 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * decrement opened result set counter
+     * Decrement opened result set counter.
      */
     synchronized void decrResultSetCount() {
         resultSetCount--;
@@ -260,7 +289,8 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * The statement execution method (executeQuery(), executeUpdate(), execute(), or executeBatch()) that was used to execute the statement.
+     * The statement execution method (executeQuery(), executeUpdate(), execute(), or executeBatch()) that was used to
+     * execute the statement.
      */
     static final int EXECUTE_NOT_SET = 0;
     static final int EXECUTE_QUERY = 1;
@@ -292,25 +322,27 @@ public class SQLServerStatement implements ISQLServerStatement {
     int resultSetConcurrency;
 
     /**
-     * The app result set type. This is the value passed to the statement's constructor (or inferred by default) when the statement was created.
-     * ResultSet.getType() returns this value. It may differ from the SQL Server result set type (see below). Namely, an app result set type of
-     * TYPE_FORWARD_ONLY will have an SQL Server result set type of TYPE_SS_DIRECT_FORWARD_ONLY or TYPE_SS_SERVER_CURSOR_FORWARD_ONLY depending on the
-     * value of the selectMethod connection property.
+     * The app result set type. This is the value passed to the statement's constructor (or inferred by default) when
+     * the statement was created. ResultSet.getType() returns this value. It may differ from the SQL Server result set
+     * type (see below). Namely, an app result set type of TYPE_FORWARD_ONLY will have an SQL Server result set type of
+     * TYPE_SS_DIRECT_FORWARD_ONLY or TYPE_SS_SERVER_CURSOR_FORWARD_ONLY depending on the value of the selectMethod
+     * connection property.
      *
      * Possible values of the app result set type are:
      *
-     * TYPE_FORWARD_ONLY TYPE_SCROLL_INSENSITIVE TYPE_SCROLL_SENSITIVE TYPE_SS_DIRECT_FORWARD_ONLY TYPE_SS_SERVER_CURSOR_FORWARD_ONLY
-     * TYPE_SS_SCROLL_DYNAMIC TYPE_SS_SCROLL_KEYSET TYPE_SS_SCROLL_STATIC
+     * TYPE_FORWARD_ONLY TYPE_SCROLL_INSENSITIVE TYPE_SCROLL_SENSITIVE TYPE_SS_DIRECT_FORWARD_ONLY
+     * TYPE_SS_SERVER_CURSOR_FORWARD_ONLY TYPE_SS_SCROLL_DYNAMIC TYPE_SS_SCROLL_KEYSET TYPE_SS_SCROLL_STATIC
      */
     int appResultSetType;
 
     /**
-     * The SQL Server result set type. This is the value used everywhere EXCEPT ResultSet.getType(). This value may or may not be the same as the app
-     * result set type (above).
+     * The SQL Server result set type. This is the value used everywhere EXCEPT ResultSet.getType(). This value may or
+     * may not be the same as the app result set type (above).
      *
      * Possible values of the SQL Server result set type are:
      *
-     * TYPE_SS_DIRECT_FORWARD_ONLY TYPE_SS_SERVER_CURSOR_FORWARD_ONLY TYPE_SS_SCROLL_DYNAMIC TYPE_SS_SCROLL_KEYSET TYPE_SS_SCROLL_STATIC
+     * TYPE_SS_DIRECT_FORWARD_ONLY TYPE_SS_SERVER_CURSOR_FORWARD_ONLY TYPE_SS_SCROLL_DYNAMIC TYPE_SS_SCROLL_KEYSET
+     * TYPE_SS_SCROLL_STATIC
      */
     int resultSetType;
 
@@ -323,35 +355,39 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Indicates whether to request a server cursor when executing this statement.
+     * Returns whether to request a server cursor when executing this statement.
      *
-     * Executing a statement with execute() or executeQuery() requests a server cursor in all scrollability and updatability combinations except
-     * direct forward-only, read-only.
+     * Executing a statement with execute() or executeQuery() requests a server cursor in all scrollability and
+     * updatability combinations except direct forward-only, read-only.
      *
-     * Note that when execution requests a server cursor (i.e. this method returns true), there is no guarantee that SQL Server returns one. The
-     * variable executedSqlDirectly indicates whether SQL Server executed the query with a cursor or not.
+     * Note that when execution requests a server cursor (i.e. this method returns true), there is no guarantee that SQL
+     * Server returns one. The variable executedSqlDirectly indicates whether SQL Server executed the query with a
+     * cursor or not.
      *
      * @return true if statement execution requests a server cursor, false otherwise.
      */
     final boolean isCursorable(int executeMethod) {
-        return resultSetType != SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY && (EXECUTE == executeMethod || EXECUTE_QUERY == executeMethod);
+        return resultSetType != SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY
+                && (EXECUTE == executeMethod || EXECUTE_QUERY == executeMethod);
     }
 
     /**
      * Indicates whether SQL Server executed this statement with a cursor or not.
      *
-     * When trying to execute a cursor-unfriendly statement with a server cursor, SQL Server may choose to execute the statement directly (i.e. as if
-     * no server cursor had been requested) rather than fail to execute the statement at all. We need to know when this happens so that if no rows are
-     * returned, we can tell whether the result is an empty result set or a cursored result set with rows to be fetched later.
+     * When trying to execute a cursor-unfriendly statement with a server cursor, SQL Server may choose to execute the
+     * statement directly (i.e. as if no server cursor had been requested) rather than fail to execute the statement at
+     * all. We need to know when this happens so that if no rows are returned, we can tell whether the result is an
+     * empty result set or a cursored result set with rows to be fetched later.
      */
     boolean executedSqlDirectly = false;
 
     /**
-     * Indicates whether OUT parameters (cursor ID and row count) from cursorized execution of this statement are expected in the response.
+     * Indicates whether OUT parameters (cursor ID and row count) from cursorized execution of this statement are
+     * expected in the response.
      *
-     * In most cases, except for severe errors, cursor OUT parameters are returned whenever a cursor is requested for statement execution. Even if SQL
-     * Server does not cursorize the statement as requested, these values are still present in the response and must be processed, even though their
-     * values are meaningless in that case.
+     * In most cases, except for severe errors, cursor OUT parameters are returned whenever a cursor is requested for
+     * statement execution. Even if SQL Server does not cursorize the statement as requested, these values are still
+     * present in the response and must be processed, even though their values are meaningless in that case.
      */
     boolean expectCursorOutParams;
 
@@ -367,7 +403,8 @@ public class SQLServerStatement implements ISQLServerStatement {
 
         boolean onRetValue(TDSReader tdsReader) throws SQLServerException {
             if (expectCursorOutParams) {
-                Parameter param = new Parameter(Util.shouldHonorAEForParameters(stmtColumnEncriptionSetting, connection));
+                Parameter param = new Parameter(
+                        Util.shouldHonorAEForParameters(stmtColumnEncriptionSetting, connection));
 
                 // Read the cursor ID
                 param.skipRetValStatus(tdsReader);
@@ -411,7 +448,7 @@ public class SQLServerStatement implements ISQLServerStatement {
     int nFetchDirection;
 
     /**
-     * True is the statment is closed
+     * True is the statement is closed
      */
     boolean bIsClosed;
 
@@ -426,7 +463,8 @@ public class SQLServerStatement implements ISQLServerStatement {
     private ResultSet autoGeneratedKeys;
 
     /**
-     * The array of objects in a batched call. Applicable to statements and prepared statements When the iterativeBatching property is turned on.
+     * The array of objects in a batched call. Applicable to statements and prepared statements When the
+     * iterativeBatching property is turned on.
      */
     /** The buffer that accumulates batchable statements */
     private final ArrayList<String> batchStatementBuffer = new ArrayList<>();
@@ -435,7 +473,8 @@ public class SQLServerStatement implements ISQLServerStatement {
     static final private java.util.logging.Logger stmtlogger = java.util.logging.Logger
             .getLogger("com.microsoft.sqlserver.jdbc.internals.SQLServerStatement");
 
-    /** The statement's id for logging info */
+    /** Returns the statement's id for logging info */
+    @Override
     public String toString() {
         return traceID;
     }
@@ -453,22 +492,20 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * The regular statement constructor
+     * Constructs a SQLServerStatement
      *
      * @param con
-     *            The statements connections.
+     *        The statements connections.
      * @param nType
-     *            The statement type.
+     *        The statement type.
      * @param nConcur
-     *            The statement concurrency.
+     *        The statement concurrency.
      * @param stmtColEncSetting
-     *            The statement column encryption setting.
+     *        The statement column encryption setting.
      * @exception SQLServerException
-     *                The statement could not be created.
+     *            The statement could not be created.
      */
-    SQLServerStatement(SQLServerConnection con,
-            int nType,
-            int nConcur,
+    SQLServerStatement(SQLServerConnection con, int nType, int nConcur,
             SQLServerStatementColumnEncryptionSetting stmtColEncSetting)
 
             throws SQLServerException {
@@ -483,24 +520,30 @@ public class SQLServerStatement implements ISQLServerStatement {
         stmtPoolable = false;
         connection = con;
         bIsClosed = false;
-        final int nTypes = 5;
 
         // Validate result set type ...
-        if (ResultSet.TYPE_FORWARD_ONLY != nType && ResultSet.TYPE_SCROLL_SENSITIVE != nType && ResultSet.TYPE_SCROLL_INSENSITIVE != nType
-                && SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY != nType && SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY != nType
-                && SQLServerResultSet.TYPE_SS_SCROLL_DYNAMIC != nType && SQLServerResultSet.TYPE_SS_SCROLL_KEYSET != nType
+        if (ResultSet.TYPE_FORWARD_ONLY != nType && ResultSet.TYPE_SCROLL_SENSITIVE != nType
+                && ResultSet.TYPE_SCROLL_INSENSITIVE != nType && SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY != nType
+                && SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY != nType
+                && SQLServerResultSet.TYPE_SS_SCROLL_DYNAMIC != nType
+                && SQLServerResultSet.TYPE_SS_SCROLL_KEYSET != nType
                 && SQLServerResultSet.TYPE_SS_SCROLL_STATIC != nType) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_unsupportedCursor"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_unsupportedCursor"), null, true);
         }
 
         // ... and concurrency
-        if (ResultSet.CONCUR_READ_ONLY != nConcur && ResultSet.CONCUR_UPDATABLE != nConcur && SQLServerResultSet.CONCUR_SS_SCROLL_LOCKS != nConcur
-                && SQLServerResultSet.CONCUR_SS_OPTIMISTIC_CC != nConcur && SQLServerResultSet.CONCUR_SS_OPTIMISTIC_CCVAL != nConcur) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_unsupportedConcurrency"), null, true);
+        if (ResultSet.CONCUR_READ_ONLY != nConcur && ResultSet.CONCUR_UPDATABLE != nConcur
+                && SQLServerResultSet.CONCUR_SS_SCROLL_LOCKS != nConcur
+                && SQLServerResultSet.CONCUR_SS_OPTIMISTIC_CC != nConcur
+                && SQLServerResultSet.CONCUR_SS_OPTIMISTIC_CCVAL != nConcur) {
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_unsupportedConcurrency"), null, true);
         }
 
         if (null == stmtColEncSetting) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_unsupportedStmtColEncSetting"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_unsupportedStmtColEncSetting"), null, true);
         }
 
         stmtColumnEncriptionSetting = stmtColEncSetting;
@@ -519,31 +562,29 @@ public class SQLServerStatement implements ISQLServerStatement {
                 // Check selectMethod and set to TYPE_SS_DIRECT_FORWARD_ONLY or
                 // TYPE_SS_SERVER_CURSOR_FORWARD_ONLY accordingly.
                 String selectMethod = con.getSelectMethod();
-                resultSetType = (null == selectMethod || !selectMethod.equals("cursor")) ? SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY : // Default
-                                                                                                                                            // forward-only,
-                                                                                                                                            // read-only
-                                                                                                                                            // cursor
-                                                                                                                                            // type
-                        SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY;
-            }
-            else {
+                resultSetType = (null == selectMethod
+                        || !selectMethod.equals("cursor")) ? SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY : // Default
+                                                                                                              // forward-only,
+                                                                                                              // read-only
+                                                                                                              // cursor
+                                                                                                              // type
+                                                           SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY;
+            } else {
                 resultSetType = SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY;
             }
-        }
-        else if (ResultSet.TYPE_SCROLL_INSENSITIVE == nType) {
+        } else if (ResultSet.TYPE_SCROLL_INSENSITIVE == nType) {
             resultSetType = SQLServerResultSet.TYPE_SS_SCROLL_STATIC;
-        }
-        else if (ResultSet.TYPE_SCROLL_SENSITIVE == nType) {
+        } else if (ResultSet.TYPE_SCROLL_SENSITIVE == nType) {
             resultSetType = SQLServerResultSet.TYPE_SS_SCROLL_KEYSET;
-        }
-        else // App specified one of the SQL Server types
+        } else // App specified one of the SQL Server types
         {
             resultSetType = nType;
         }
 
         // Figure out default fetch direction
         nFetchDirection = (SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY == resultSetType
-                || SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY == resultSetType) ? ResultSet.FETCH_FORWARD : ResultSet.FETCH_UNKNOWN;
+                || SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY == resultSetType) ? ResultSet.FETCH_FORWARD
+                                                                                           : ResultSet.FETCH_UNKNOWN;
 
         // Figure out fetch size:
         //
@@ -560,25 +601,33 @@ public class SQLServerStatement implements ISQLServerStatement {
         // with all but read only concurrency. Against a Shiloh server, such
         // combinations cause the cursor to be silently "upgraded" to one that
         // works. We enforce the more restrictive behavior of the two here.
-        if (ResultSet.CONCUR_READ_ONLY != nConcur
-                && (SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY == resultSetType || SQLServerResultSet.TYPE_SS_SCROLL_STATIC == resultSetType)) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_unsupportedCursorAndConcurrency"), null,
-                    true);
+        if (ResultSet.CONCUR_READ_ONLY != nConcur && (SQLServerResultSet.TYPE_SS_DIRECT_FORWARD_ONLY == resultSetType
+                || SQLServerResultSet.TYPE_SS_SCROLL_STATIC == resultSetType)) {
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_unsupportedCursorAndConcurrency"), null, true);
         }
 
         // All result set types other than firehose (SQL Server default) use server side cursors.
         setResponseBuffering(connection.getResponseBuffering());
 
         setDefaultQueryTimeout();
+        setDefaultQueryCancelTimeout();
 
         if (stmtlogger.isLoggable(java.util.logging.Level.FINER)) {
-            stmtlogger.finer("Properties for " + toString() + ":" + " Result type:" + appResultSetType + " (" + resultSetType + ")" + " Concurrency:"
-                    + resultSetConcurrency + " Fetchsize:" + nFetchSize + " bIsClosed:" + bIsClosed + " useLastUpdateCount:"
-                    + connection.useLastUpdateCount());
+            stmtlogger.finer("Properties for " + toString() + ":" + " Result type:" + appResultSetType + " ("
+                    + resultSetType + ")" + " Concurrency:" + resultSetConcurrency + " Fetchsize:" + nFetchSize
+                    + " bIsClosed:" + bIsClosed + " useLastUpdateCount:" + connection.useLastUpdateCount());
         }
 
         if (stmtlogger.isLoggable(java.util.logging.Level.FINE)) {
             stmtlogger.fine(toString() + " created by (" + connection.toString() + ")");
+        }
+    }
+
+    private void setDefaultQueryCancelTimeout() {
+        int cancelQueryTimeoutSeconds = this.connection.getCancelQueryTimeoutSeconds();
+        if (cancelQueryTimeoutSeconds > 0) {
+            this.cancelQueryTimeoutSeconds = cancelQueryTimeoutSeconds;
         }
     }
 
@@ -595,32 +644,28 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Standard handler for unsupported data types.
-     */
-    /* L0 */ final void NotImplemented() throws SQLServerException {
-        SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_notSupported"), null, false);
-    }
-
-    /**
-     * Close the statement.
+     * Closes the statement.
      *
-     * Note that the public close() method performs all of the cleanup work through this internal method which cannot throw any exceptions. This is
-     * done deliberately to ensure that ALL of the object's client-side and server-side state is cleaned up as best as possible, even under conditions
-     * which would normally result in exceptions being thrown.
+     * Note that the public close() method performs all of the cleanup work through this internal method which cannot
+     * throw any exceptions. This is done deliberately to ensure that ALL of the object's client-side and server-side
+     * state is cleaned up as best as possible, even under conditions which would normally result in exceptions being
+     * thrown.
      */
     void closeInternal() {
         // Regardless what happens when cleaning up,
         // the statement is considered closed.
         assert !bIsClosed;
-
         discardLastExecutionResults();
 
         bIsClosed = true;
         autoGeneratedKeys = null;
         sqlWarnings = null;
         inOutParam = null;
+
+        connection.removeOpenStatement(this);
     }
 
+    @Override
     public void close() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "close");
 
@@ -630,6 +675,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "close");
     }
 
+    @Override
     public void closeOnCompletion() throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "closeOnCompletion");
 
@@ -641,18 +687,10 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "closeOnCompletion");
     }
 
-    /**
-     * Execute a result set query
-     * 
-     * @param sql
-     *            the SQL query
-     * @exception SQLServerException
-     *                The SQL was invalid.
-     * @return a JDBC result set.
-     */
-    public java.sql.ResultSet executeQuery(String sql) throws SQLServerException {
+    @Override
+    public java.sql.ResultSet executeQuery(String sql) throws SQLServerException, SQLTimeoutException {
         loggerExternal.entering(getClassNameLogging(), "executeQuery", sql);
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -661,24 +699,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         return resultSet;
     }
 
-    final SQLServerResultSet executeQueryInternal(String sql) throws SQLServerException {
+    final SQLServerResultSet executeQueryInternal(String sql) throws SQLServerException, SQLTimeoutException {
         checkClosed();
         executeStatement(new StmtExecCmd(this, sql, EXECUTE_QUERY_INTERNAL, NO_GENERATED_KEYS));
         return resultSet;
     }
 
-    /**
-     * Execute a JDBC update
-     * 
-     * @param sql
-     *            the SQL query
-     * @exception SQLServerException
-     *                The SQL was invalid.
-     * @return The number of rows updated.
-     */
-    public int executeUpdate(String sql) throws SQLServerException {
+    @Override
+    public int executeUpdate(String sql) throws SQLServerException, SQLTimeoutException {
         loggerExternal.entering(getClassNameLogging(), "executeUpdate", sql);
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -686,27 +716,19 @@ public class SQLServerStatement implements ISQLServerStatement {
 
         // this shouldn't happen, caller probably meant to call executeLargeUpdate
         if (updateCount < Integer.MIN_VALUE || updateCount > Integer.MAX_VALUE)
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
 
         loggerExternal.exiting(getClassNameLogging(), "executeUpdate", updateCount);
 
         return (int) updateCount;
     }
 
-    /**
-     * Execute a JDBC update
-     * 
-     * @param sql
-     *            the SQL query
-     * @exception SQLServerException
-     *                The SQL was invalid.
-     * @return The number of rows updated.
-     */
-    public long executeLargeUpdate(String sql) throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
+    @Override
+    public long executeLargeUpdate(String sql) throws SQLServerException, SQLTimeoutException {
 
         loggerExternal.entering(getClassNameLogging(), "executeLargeUpdate", sql);
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -716,18 +738,10 @@ public class SQLServerStatement implements ISQLServerStatement {
         return updateCount;
     }
 
-    /**
-     * Execute an update or query.
-     *
-     * @param sql
-     *            The update or query.
-     * @exception SQLServerException
-     *                The SQL statement was not valid.
-     * @return True if a result set was generated.
-     */
-    public boolean execute(String sql) throws SQLServerException {
+    @Override
+    public boolean execute(String sql) throws SQLServerException, SQLTimeoutException {
         loggerExternal.entering(getClassNameLogging(), "execute", sql);
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -737,16 +751,17 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     private final class StmtExecCmd extends TDSCommand {
+        /**
+         * Always update serialVersionUID when prompted.
+         */
+        private static final long serialVersionUID = 4534132352812876292L;
         final SQLServerStatement stmt;
         final String sql;
         final int executeMethod;
         final int autoGeneratedKeys;
 
-        StmtExecCmd(SQLServerStatement stmt,
-                String sql,
-                int executeMethod,
-                int autoGeneratedKeys) {
-            super(stmt.toString() + " executeXXX", stmt.queryTimeout);
+        StmtExecCmd(SQLServerStatement stmt, String sql, int executeMethod, int autoGeneratedKeys) {
+            super(stmt.toString() + " executeXXX", stmt.queryTimeout, stmt.cancelQueryTimeoutSeconds);
             this.stmt = stmt;
             this.sql = sql;
             this.executeMethod = executeMethod;
@@ -767,7 +782,7 @@ public class SQLServerStatement implements ISQLServerStatement {
     private String ensureSQLSyntax(String sql) throws SQLServerException {
         if (sql.indexOf(LEFT_CURLY_BRACKET) >= 0) {
 
-            Sha1HashKey cacheKey = new Sha1HashKey(sql);
+            CityHash128Key cacheKey = new CityHash128Key(sql);
 
             // Check for cached SQL metadata.
             ParsedSQLCacheItem cacheItem = getCachedParsedSQL(cacheKey);
@@ -790,9 +805,9 @@ public class SQLServerStatement implements ISQLServerStatement {
         if (EXECUTE_QUERY == executeMethod || EXECUTE == executeMethod) {
             connection.setMaxRows(maxRows);
             connection.setMaxFieldSize(maxFieldSize);
-        }
-        else {
-            assert EXECUTE_UPDATE == executeMethod || EXECUTE_BATCH == executeMethod || EXECUTE_QUERY_INTERNAL == executeMethod;
+        } else {
+            assert EXECUTE_UPDATE == executeMethod || EXECUTE_BATCH == executeMethod
+                    || EXECUTE_QUERY_INTERNAL == executeMethod;
 
             // If we are executing via any of the above methods then make sure any
             // previous maxRows limitation on the connection is removed.
@@ -823,7 +838,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         // Note: similar logic in SQLServerPreparedStatement.doExecutePreparedStatement
         setMaxRowsAndMaxFieldSize();
 
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         if (isCursorable(executeMethod) && isSelect(sql)) {
@@ -831,8 +846,7 @@ public class SQLServerStatement implements ISQLServerStatement {
                 stmtlogger.fine(toString() + " Executing server side cursor " + sql);
 
             doExecuteCursored(execCmd, sql);
-        }
-        else // Non-cursored execution (includes EXECUTE_QUERY_INTERNAL)
+        } else // Non-cursored execution (includes EXECUTE_QUERY_INTERNAL)
         {
             executedSqlDirectly = true;
             expectCursorOutParams = false;
@@ -843,7 +857,8 @@ public class SQLServerStatement implements ISQLServerStatement {
 
             // If this is an INSERT statement and generated keys were requested
             // then add on the query to return them.
-            if (RETURN_GENERATED_KEYS == execCmd.autoGeneratedKeys && (EXECUTE_UPDATE == executeMethod || EXECUTE == executeMethod)
+            if (RETURN_GENERATED_KEYS == execCmd.autoGeneratedKeys
+                    && (EXECUTE_UPDATE == executeMethod || EXECUTE == executeMethod)
                     && sql.trim().toUpperCase().startsWith("INSERT")) {
                 tdsWriter.writeString(identityQuery);
             }
@@ -854,30 +869,35 @@ public class SQLServerStatement implements ISQLServerStatement {
             // Start the response
             ensureExecuteResultsReader(execCmd.startResponse(isResponseBufferingAdaptive));
             startResults();
-            getNextResult();
+            getNextResult(true);
         }
 
         // If execution produced no result set, then throw an exception if executeQuery() was used.
         if (null == resultSet) {
             if (EXECUTE_QUERY == executeMethod) {
-                SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_noResultset"), null, true);
+                SQLServerException.makeFromDriverError(connection, this,
+                        SQLServerException.getErrString("R_noResultset"), null, true);
             }
         }
         // Otherwise, if execution produced a result set, then throw an exception
         // if executeUpdate() or executeBatch() was used.
         else {
             if (EXECUTE_UPDATE == executeMethod || EXECUTE_BATCH == executeMethod) {
-                SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null,
-                        false);
+                SQLServerException.makeFromDriverError(connection, this,
+                        SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null, false);
             }
         }
     }
 
     private final class StmtBatchExecCmd extends TDSCommand {
+        /**
+         * Always update serialVersionUID when prompted.
+         */
+        private static final long serialVersionUID = -4621631860790243331L;
         final SQLServerStatement stmt;
 
         StmtBatchExecCmd(SQLServerStatement stmt) {
-            super(stmt.toString() + " executeBatch", stmt.queryTimeout);
+            super(stmt.toString() + " executeBatch", stmt.queryTimeout, stmt.cancelQueryTimeoutSeconds);
             this.stmt = stmt;
         }
 
@@ -898,7 +918,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         // Make sure any previous maxRows limitation on the connection is removed.
         connection.setMaxRows(0);
 
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
 
@@ -920,16 +940,17 @@ public class SQLServerStatement implements ISQLServerStatement {
         // Start the response
         ensureExecuteResultsReader(execCmd.startResponse(isResponseBufferingAdaptive));
         startResults();
-        getNextResult();
+        getNextResult(true);
 
         // If execution produced a result set, then throw an exception
         if (null != resultSet) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null, false);
         }
     }
 
     /**
-     * Reset the state to get the statement for reexecute callable statement overrides this.
+     * Resets the state to get the statement for reexecute callable statement overrides this.
      */
     final void resetForReexecute() throws SQLServerException {
         ensureExecuteResultsReader(null);
@@ -941,37 +962,57 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Determine if the SQL is a SELECT.
+     * Determines if the SQL is a SELECT.
      * 
      * @param sql
-     *            The statment SQL.
-     * @return True is the statement is a select.
+     *        The statement SQL.
+     * @return True if the statement is a select.
      */
-    /* L0 */ final boolean isSelect(String sql) throws SQLServerException {
+    final boolean isSelect(String sql) throws SQLServerException {
         checkClosed();
         // Used to check just the first letter which would cause
         // "Set" commands to return true...
         String temp = sql.trim();
-        char c = temp.charAt(0);
-        if (c != 's' && c != 'S')
+        if (null == sql || sql.length() < 6) {
             return false;
+        }
         return temp.substring(0, 6).equalsIgnoreCase("select");
     }
 
     /**
-     * Replace a JDBC parameter marker with the parameter's string value
+     * Determine if the SQL is a INSERT.
+     * 
+     * @param sql
+     *        The statement SQL.
+     * @return True if the statement is an insert.
+     */
+    final boolean isInsert(String sql) throws SQLServerException {
+        checkClosed();
+        // Used to check just the first letter which would cause
+        // "Set" commands to return true...
+        String temp = sql.trim();
+        if (null == sql || sql.length() < 6) {
+            return false;
+        }
+        if (temp.substring(0, 2).equalsIgnoreCase("/*")) {
+            int index = temp.indexOf("*/") + 2;
+            return isInsert(temp.substring(index));
+        }
+        return temp.substring(0, 6).equalsIgnoreCase("insert");
+    }
+
+    /**
+     * Replaces a JDBC parameter marker with the parameter's string value
      * 
      * @param str
-     *            the parameter syntax
+     *        the parameter syntax
      * @param marker
-     *            the parameter marker
+     *        the parameter marker
      * @param replaceStr
-     *            the param value
+     *        the param value
      * @return String
      */
-    /* L0 */ static String replaceParameterWithString(String str,
-            char marker,
-            String replaceStr) {
+    static String replaceParameterWithString(String str, char marker, String replaceStr) {
         int index = 0;
         while ((index = str.indexOf("" + marker)) >= 0) {
             str = str.substring(0, index) + replaceStr + str.substring(index + 1, str.length());
@@ -980,63 +1021,63 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Set a JDBC parameter to null. (Used only when processing LOB column sources.)
+     * Sets a JDBC parameter to null. (Used only when processing LOB column sources.)
      * 
      * @param sql
-     *            the parameter syntax
+     *        the parameter syntax
      * @return the result
      */
-    /* L0 */ static String replaceMarkerWithNull(String sql) {
+    static String replaceMarkerWithNull(String sql) {
         if (!sql.contains("'")) {
-            String retStr = replaceParameterWithString(sql, '?', "null");
-            return retStr;
-        }
-        else {
+            return replaceParameterWithString(sql, '?', "null");
+        } else {
             StringTokenizer st = new StringTokenizer(sql, "'", true);
             boolean beforeColon = true;
-            String retSql = "";
+            final StringBuilder retSql = new StringBuilder();
             while (st.hasMoreTokens()) {
                 String str = st.nextToken();
                 if (str.equals("'")) {
-                    retSql += "'";
+                    retSql.append("'");
                     beforeColon = !beforeColon;
                     continue;
                 }
                 if (beforeColon) {
                     String repStr = replaceParameterWithString(str, '?', "null");
-                    retSql += repStr;
+                    retSql.append(repStr);
                     continue;
-                }
-                else {
-                    retSql += str;
+                } else {
+                    retSql.append(str);
                     continue;
                 }
             }
-            return retSql;
+            return retSql.toString();
         }
     }
 
-    /* L0 */ void checkClosed() throws SQLServerException {
+    void checkClosed() throws SQLServerException {
         // Check the connection first so that Statement methods
         // throw a "Connection closed" exception if the reason
         // that the statement was closed is because the connection
         // was closed.
         connection.checkClosed();
         if (bIsClosed) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_statementIsClosed"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_statementIsClosed"), null, false);
         }
     }
 
     /* ---------------- JDBC API methods ------------------ */
 
-    /* L0 */ public final int getMaxFieldSize() throws SQLServerException {
+    @Override
+    public final int getMaxFieldSize() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getMaxFieldSize");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getMaxFieldSize", maxFieldSize);
         return maxFieldSize;
     }
 
-    /* L0 */ public final void setMaxFieldSize(int max) throws SQLServerException {
+    @Override
+    public final void setMaxFieldSize(int max) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "setMaxFieldSize", max);
         checkClosed();
         if (max < 0) {
@@ -1048,15 +1089,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setMaxFieldSize");
     }
 
-    /* L0 */ public final int getMaxRows() throws SQLServerException {
+    @Override
+    public final int getMaxRows() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getMaxRows");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getMaxRows", maxRows);
         return maxRows;
     }
 
+    @Override
     public final long getLargeMaxRows() throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
 
         loggerExternal.entering(getClassNameLogging(), "getLargeMaxRows");
 
@@ -1067,7 +1109,8 @@ public class SQLServerStatement implements ISQLServerStatement {
         return (long) getMaxRows();
     }
 
-    /* L0 */ public final void setMaxRows(int max) throws SQLServerException {
+    @Override
+    public final void setMaxRows(int max) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "setMaxRows", max);
         checkClosed();
@@ -1085,8 +1128,8 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setMaxRows");
     }
 
+    @Override
     public final void setLargeMaxRows(long max) throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
 
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "setLargeMaxRows", max);
@@ -1094,13 +1137,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         // SQL server only supports integer limits for setting max rows.
         // If <max> is bigger than integer limits then throw an exception, otherwise call setMaxRows(int)
         if (max > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException(SQLServerException.getErrString("R_invalidMaxRows"));
+            MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidMaxRows"));
+            Object[] msgArgs = {max};
+            SQLServerException.makeFromDriverError(connection, this, form.format(msgArgs), null, true);
         }
         setMaxRows((int) max);
         loggerExternal.exiting(getClassNameLogging(), "setLargeMaxRows");
     }
 
-    /* L0 */ public final void setEscapeProcessing(boolean enable) throws SQLServerException {
+    @Override
+    public final void setEscapeProcessing(boolean enable) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "setEscapeProcessing", enable);
         checkClosed();
@@ -1108,14 +1154,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setEscapeProcessing");
     }
 
-    /* L0 */ public final int getQueryTimeout() throws SQLServerException {
+    @Override
+    public final int getQueryTimeout() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getQueryTimeout");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getQueryTimeout", queryTimeout);
         return queryTimeout;
     }
 
-    /* L0 */ public final void setQueryTimeout(int seconds) throws SQLServerException {
+    @Override
+    public final void setQueryTimeout(int seconds) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "setQueryTimeout", seconds);
         checkClosed();
         if (seconds < 0) {
@@ -1127,6 +1175,28 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setQueryTimeout");
     }
 
+    @Override
+    public final int getCancelQueryTimeout() throws SQLServerException {
+        loggerExternal.entering(getClassNameLogging(), "getCancelQueryTimeout");
+        checkClosed();
+        loggerExternal.exiting(getClassNameLogging(), "getCancelQueryTimeout", cancelQueryTimeoutSeconds);
+        return cancelQueryTimeoutSeconds;
+    }
+
+    @Override
+    public final void setCancelQueryTimeout(int seconds) throws SQLServerException {
+        loggerExternal.entering(getClassNameLogging(), "setCancelQueryTimeout", seconds);
+        checkClosed();
+        if (seconds < 0) {
+            MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidCancelQueryTimeout"));
+            Object[] msgArgs = {seconds};
+            SQLServerException.makeFromDriverError(connection, this, form.format(msgArgs), null, true);
+        }
+        cancelQueryTimeoutSeconds = seconds;
+        loggerExternal.exiting(getClassNameLogging(), "setCancelQueryTimeout");
+    }
+
+    @Override
     public final void cancel() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "cancel");
         checkClosed();
@@ -1139,7 +1209,8 @@ public class SQLServerStatement implements ISQLServerStatement {
 
     Vector<SQLWarning> sqlWarnings; // the SQL warnings chain
 
-    /* L0 */ public final SQLWarning getWarnings() throws SQLServerException {
+    @Override
+    public final SQLWarning getWarnings() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getWarnings");
         checkClosed();
         if (sqlWarnings == null)
@@ -1149,14 +1220,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         return warn;
     }
 
-    /* L0 */ public final void clearWarnings() throws SQLServerException {
+    @Override
+    public final void clearWarnings() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "clearWarnings");
         checkClosed();
         sqlWarnings = null;
         loggerExternal.exiting(getClassNameLogging(), "clearWarnings");
     }
 
-    /* L0 */ public final void setCursorName(String name) throws SQLServerException {
+    @Override
+    public final void setCursorName(String name) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "setCursorName", name);
         checkClosed();
         cursorName = name;
@@ -1167,6 +1240,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         return cursorName;
     }
 
+    @Override
     public final java.sql.ResultSet getResultSet() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getResultSet");
         checkClosed();
@@ -1174,22 +1248,24 @@ public class SQLServerStatement implements ISQLServerStatement {
         return resultSet;
     }
 
-    /* L0 */ public final int getUpdateCount() throws SQLServerException {
+    @Override
+    public final int getUpdateCount() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getUpdateCount");
 
         checkClosed();
 
         // this shouldn't happen, caller probably meant to call getLargeUpdateCount
         if (updateCount < Integer.MIN_VALUE || updateCount > Integer.MAX_VALUE)
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
 
         loggerExternal.exiting(getClassNameLogging(), "getUpdateCount", updateCount);
 
         return (int) updateCount;
     }
 
+    @Override
     public final long getLargeUpdateCount() throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
 
         loggerExternal.entering(getClassNameLogging(), "getUpdateCount");
         checkClosed();
@@ -1219,16 +1295,16 @@ public class SQLServerStatement implements ISQLServerStatement {
         while (moreResults) {
             // Get the next result
             try {
-                getNextResult();
-            }
-            catch (SQLServerException e) {
+                getNextResult(true);
+            } catch (SQLServerException e) {
                 // If an exception is thrown while processing the results
                 // then decide what to do with it:
                 if (moreResults) {
                     // Silently discard database errors and continue processing the remaining results
                     if (SQLServerException.DRIVER_ERROR_FROM_DATABASE == e.getDriverErrorCode()) {
                         if (stmtlogger.isLoggable(java.util.logging.Level.FINEST)) {
-                            stmtlogger.finest(this + " ignoring database error: " + e.getErrorCode() + " " + e.getMessage());
+                            stmtlogger.finest(
+                                    this + " ignoring database error: " + e.getErrorCode() + " " + e.getMessage());
                         }
 
                         continue;
@@ -1236,7 +1312,8 @@ public class SQLServerStatement implements ISQLServerStatement {
 
                     // If statement execution was canceled then continue processing the
                     // remaining results before throwing the "statement canceled" exception.
-                    if (e.getSQLState().equals(SQLState.STATEMENT_CANCELED.getSQLStateCode())) {
+                    if (e.getSQLState() != null
+                            && e.getSQLState().equals(SQLState.STATEMENT_CANCELED.getSQLStateCode())) {
                         interruptException = e;
                         continue;
                     }
@@ -1255,19 +1332,20 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Check for more results in the TDS stream
+     * Returns more results in the TDS stream.
      *
-     * @return true if the next result is a ResultSet object; false if it is an integer (indicating that it is an update count or there are no more
-     *         results).
+     * @return true if the next result is a ResultSet object; false if it is an integer (indicating that it is an update
+     *         count or there are no more results).
      */
-    /* L0 */ public final boolean getMoreResults() throws SQLServerException {
+    @Override
+    public final boolean getMoreResults() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getMoreResults");
         checkClosed();
 
         // Get the next result, whatever it is (ResultSet or update count).
         // Don't just return the value from the getNextResult() call, however.
         // The getMoreResults method has a subtle spec for its return value (see above).
-        getNextResult();
+        getNextResult(true);
         loggerExternal.exiting(getClassNameLogging(), "getMoreResults", null != resultSet);
         return null != resultSet;
     }
@@ -1277,10 +1355,11 @@ public class SQLServerStatement implements ISQLServerStatement {
      *
      * This method is used to clean up before moving to the next result and after processing the last result.
      *
-     * Note that errors closing the ResultSet (if the last result is a ResultSet) are caught, logged, and ignored. The reason for this is that this
-     * method is only for cleanup for when the app fails to do the cleanup itself (for example by leaving a ResultSet open when closing the
-     * statement). If the app wants to be able to handle errors from closing the current result set, then it should close that ResultSet itself before
-     * closing the statement, moving to the next result, or whatever. This is the recommended practice with JDBC.
+     * Note that errors closing the ResultSet (if the last result is a ResultSet) are caught, logged, and ignored. The
+     * reason for this is that this method is only for cleanup for when the app fails to do the cleanup itself (for
+     * example by leaving a ResultSet open when closing the statement). If the app wants to be able to handle errors
+     * from closing the current result set, then it should close that ResultSet itself before closing the statement,
+     * moving to the next result, or whatever. This is the recommended practice with JDBC.
      */
     final void clearLastResult() {
         // Clear any update count result
@@ -1293,22 +1372,25 @@ public class SQLServerStatement implements ISQLServerStatement {
             // it anyhow.
             try {
                 resultSet.close();
-            }
-            catch (SQLServerException e) {
-                stmtlogger.finest(this + " clearing last result; ignored error closing ResultSet: " + e.getErrorCode() + " " + e.getMessage());
-            }
-            finally {
+            } catch (SQLServerException e) {
+                stmtlogger.finest(this + " clearing last result; ignored error closing ResultSet: " + e.getErrorCode()
+                        + " " + e.getMessage());
+            } finally {
                 resultSet = null;
             }
         }
     }
 
     /**
-     * Get the next result in the TDS response token stream, which may be a result set, update count or exception.
+     * Returns the next result in the TDS response token stream, which may be a result set, update count or exception.
      *
+     * @param clearFlag
+     *        Boolean Flag if set to true, clears the last stored results in ResultSet. If set to false, does not clear
+     *        ResultSet and continues processing TDS Stream for more results.
+     * 
      * @return true if another result (ResultSet or update count) was available; false if there were no more results.
      */
-    final boolean getNextResult() throws SQLServerException {
+    final boolean getNextResult(boolean clearFlag) throws SQLServerException {
         /**
          * TDS response token stream handler used to locate the next result in the TDS response token stream.
          */
@@ -1336,22 +1418,16 @@ public class SQLServerStatement implements ISQLServerStatement {
             }
 
             boolean onColMetaData(TDSReader tdsReader) throws SQLServerException {
-                // If we have an update count from a previous command that we haven't
-                // acknowledged because we didn't know at the time whether it was
-                // the undesired result from a trigger, we now know that it wasn't,
-                // so return it.
-                if (null != stmtDoneToken)
-                    return false;
-
-                // If we encountered an ERROR token before hitting this COLMETADATA token,
-                // without any intervening DONE token (indicating an error result), then
-                // act as if that had been the case and drop out to propagate the error
-                // up as an SQLException.
-                if (null != getDatabaseError())
-                    return false;
-
-                // Otherwise, column metadata indicates the start of a ResultSet
-                isResultSet = true;
+                /*
+                 * If we have an update count from a previous command that we haven't acknowledged because we didn't
+                 * know at the time whether it was the undesired result from a trigger, and if we did not encounter an
+                 * ERROR token before hitting this COLMETADATA token, with any intervening DONE token (does not indicate
+                 * an error result), then go ahead.
+                 */
+                if (null == stmtDoneToken && null == getDatabaseError()) {
+                    // If both conditions are true, column metadata indicates the start of a ResultSet
+                    isResultSet = true;
+                }
                 return false;
             }
 
@@ -1381,8 +1457,8 @@ public class SQLServerStatement implements ISQLServerStatement {
                     // status (Statement.SUCCESS_NO_INFO)
                     if (-1 == doneToken.getUpdateCount() && EXECUTE_BATCH != executeMethod)
                         return true;
-                    
-                    if ( -1 != doneToken.getUpdateCount() && EXECUTE_QUERY == executeMethod )
+
+                    if (-1 != doneToken.getUpdateCount() && EXECUTE_QUERY == executeMethod)
                         return true;
 
                     // Otherwise, the update count is valid. Now determine whether we should
@@ -1468,6 +1544,14 @@ public class SQLServerStatement implements ISQLServerStatement {
                 else {
                     procedureRetStatToken = new StreamRetStatus();
                     procedureRetStatToken.setFromTDS(tdsReader);
+                    // only read the return value from stored procedure if we are expecting one. Also check that it is
+                    // not cursorable and not TVP type, for these two
+                    // driver is still following the old behavior of executing sp_executesql for stored procedures.
+                    if (!isCursorable(executeMethod) && !SQLServerPreparedStatement.isTVPType && null != inOutParam
+                            && inOutParam.length > 0 && inOutParam[0].isReturnValue()) {
+                        inOutParam[0].setFromReturnStatus(procedureRetStatToken.getStatus(), connection);
+                        return false;
+                    }
                 }
 
                 return true;
@@ -1479,7 +1563,8 @@ public class SQLServerStatement implements ISQLServerStatement {
                 // A RETVALUE token appearing in the execution results, but before any RETSTATUS
                 // token, is a TEXTPTR return value that should be ignored.
                 if (moreResults && null == procedureRetStatToken) {
-                    Parameter p = new Parameter(Util.shouldHonorAEForParameters(stmtColumnEncriptionSetting, connection));
+                    Parameter p = new Parameter(
+                            Util.shouldHonorAEForParameters(stmtColumnEncriptionSetting, connection));
                     p.skipRetValStatus(tdsReader);
                     p.skipValue(tdsReader, true);
                     return true;
@@ -1507,14 +1592,14 @@ public class SQLServerStatement implements ISQLServerStatement {
                 if (16954 == infoToken.msg.getErrorNumber())
                     executedSqlDirectly = true;
 
-                SQLWarning warning = new SQLWarning(infoToken.msg.getMessage(),
-                        SQLServerException.generateStateCode(connection, infoToken.msg.getErrorNumber(), infoToken.msg.getErrorState()),
+                SQLWarning warning = new SQLWarning(
+                        infoToken.msg.getErrorMessage(), SQLServerException.generateStateCode(connection,
+                                infoToken.msg.getErrorNumber(), infoToken.msg.getErrorState()),
                         infoToken.msg.getErrorNumber());
 
                 if (sqlWarnings == null) {
                     sqlWarnings = new Vector<>();
-                }
-                else {
+                } else {
                     int n = sqlWarnings.size();
                     SQLWarning w = sqlWarnings.elementAt(n - 1);
                     w.setNextWarning(warning);
@@ -1530,34 +1615,35 @@ public class SQLServerStatement implements ISQLServerStatement {
             return false;
         }
 
-        // Clear out previous results
-        clearLastResult();
+        // Clear out previous results only when clearFlag = true
+        if (clearFlag) {
+            clearLastResult();
+        }
 
-        // If there are no more results, then we're done.
-        // All we had to do was to close out the previous results.
-        if (!moreResults)
+        // If there are no more results, then we're done. All we had to do was to close out the previous results.
+        if (!moreResults) {
             return false;
+        }
 
         // Figure out the next result.
         NextResult nextResult = new NextResult();
-        TDSParser.parse(resultsReader(), nextResult);
+
+        // Signal to not read all token other than TDS_MSG if reading only warnings
+        TDSParser.parse(resultsReader(), nextResult, !clearFlag);
 
         // Check for errors first.
         if (null != nextResult.getDatabaseError()) {
-            SQLServerException.makeFromDatabaseError(connection, null, nextResult.getDatabaseError().getMessage(), nextResult.getDatabaseError(),
-                    false);
+            SQLServerException.makeFromDatabaseError(connection, null, nextResult.getDatabaseError().getErrorMessage(),
+                    nextResult.getDatabaseError(), false);
         }
+
+        // If we didn't clear current ResultSet, we wanted to read only warnings. Return back from here.
+        if (!clearFlag)
+            return false;
 
         // Not an error. Is it a result set?
         else if (nextResult.isResultSet()) {
-            // Make sure SQLServerResultSet42 is used for 4.2 and above
-            if (Util.use42Wrapper() || Util.use43Wrapper()) {
-                resultSet = new SQLServerResultSet42(this);
-            }
-            else {
-                resultSet = new SQLServerResultSet(this);
-            }
-
+            resultSet = new SQLServerResultSet(this);
             return true;
         }
 
@@ -1581,8 +1667,9 @@ public class SQLServerStatement implements ISQLServerStatement {
         // there is no update count. That is: we have a successful result (return true),
         // but we have no other information about it (updateCount = -1).
         updateCount = -1;
-        if (!moreResults)
+        if (!moreResults) {
             return true;
+        }
 
         // Only way to get here (moreResults is still true, but no apparent results of any kind)
         // is if the TDSParser didn't actually parse _anything_. That is, we are at EOF in the
@@ -1592,10 +1679,10 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Consume the OUT parameter for the statement object itself.
+     * Consumes the OUT parameter for the statement object itself.
      *
-     * Normal Statement objects consume the server cursor OUT params when present. PreparedStatement and CallableStatement objects override this
-     * method to consume the prepared statement handle as well.
+     * Normal Statement objects consume the server cursor OUT params when present. PreparedStatement and
+     * CallableStatement objects override this method to consume the prepared statement handle as well.
      */
     boolean consumeExecOutParam(TDSReader tdsReader) throws SQLServerException {
         if (expectCursorOutParams) {
@@ -1608,6 +1695,7 @@ public class SQLServerStatement implements ISQLServerStatement {
 
     // --------------------------JDBC 2.0-----------------------------
 
+    @Override
     public final void setFetchDirection(int nDir) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "setFetchDirection", nDir);
@@ -1625,6 +1713,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setFetchDirection");
     }
 
+    @Override
     public final int getFetchDirection() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getFetchDirection");
         checkClosed();
@@ -1632,38 +1721,44 @@ public class SQLServerStatement implements ISQLServerStatement {
         return nFetchDirection;
     }
 
-    /* L0 */ public final void setFetchSize(int rows) throws SQLServerException {
+    @Override
+    public final void setFetchSize(int rows) throws SQLServerException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "setFetchSize", rows);
         checkClosed();
         if (rows < 0)
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidFetchSize"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidFetchSize"), null, false);
 
         nFetchSize = (0 == rows) ? defaultFetchSize : rows;
         loggerExternal.exiting(getClassNameLogging(), "setFetchSize");
     }
 
-    /* L0 */ public final int getFetchSize() throws SQLServerException {
+    @Override
+    public final int getFetchSize() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getFetchSize");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getFetchSize", nFetchSize);
         return nFetchSize;
     }
 
-    /* L0 */ public final int getResultSetConcurrency() throws SQLServerException {
+    @Override
+    public final int getResultSetConcurrency() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getResultSetConcurrency");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getResultSetConcurrency", resultSetConcurrency);
         return resultSetConcurrency;
     }
 
-    /* L0 */ public final int getResultSetType() throws SQLServerException {
+    @Override
+    public final int getResultSetType() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getResultSetType");
         checkClosed();
         loggerExternal.exiting(getClassNameLogging(), "getResultSetType", appResultSetType);
         return appResultSetType;
     }
 
+    @Override
     public void addBatch(String sql) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "addBatch", sql);
         checkClosed();
@@ -1677,6 +1772,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "addBatch");
     }
 
+    @Override
     public void clearBatch() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "clearBatch");
         checkClosed();
@@ -1685,11 +1781,12 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 
     /**
-     * Send a batch of statements to the database.
+     * Sends a batch of statements to the database.
      */
-    public int[] executeBatch() throws SQLServerException, BatchUpdateException {
+    @Override
+    public int[] executeBatch() throws SQLServerException, BatchUpdateException, SQLTimeoutException {
         loggerExternal.entering(getClassNameLogging(), "executeBatch");
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -1717,25 +1814,23 @@ public class SQLServerStatement implements ISQLServerStatement {
                     if (0 == batchNum) {
                         // First time through, execute the entire set of batches and return the first result
                         executeStatement(new StmtBatchExecCmd(this));
-                    }
-                    else {
+                    } else {
                         // Subsequent times through, just get the result from the next batch.
                         // If there are not enough results (update counts) to satisfy the number of batches,
                         // then bail, leaving EXECUTE_FAILED in the remaining slots of the update count array.
                         startResults();
-                        if (!getNextResult())
+                        if (!getNextResult(true))
                             break;
                     }
 
                     if (null != resultSet) {
-                        SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_resultsetGeneratedForUpdate"),
-                                null, true);
+                        SQLServerException.makeFromDriverError(connection, this,
+                                SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null, true);
+                    } else {
+                        updateCounts[batchNum] = (-1 != (int) updateCount) ? (int) updateCount
+                                                                           : Statement.SUCCESS_NO_INFO;
                     }
-                    else {
-                        updateCounts[batchNum] = (-1 != (int) updateCount) ? (int) updateCount : Statement.SUCCESS_NO_INFO;
-                    }
-                }
-                catch (SQLServerException e) {
+                } catch (SQLServerException e) {
                     // If the failure was severe enough to close the connection or roll back a
                     // manual transaction, then propagate the error up as a SQLServerException
                     // now, rather than continue with the batch.
@@ -1750,13 +1845,13 @@ public class SQLServerStatement implements ISQLServerStatement {
 
             // If we had any errors then throw a BatchUpdateException with the partial results.
             if (null != lastError) {
-                throw new BatchUpdateException(lastError.getMessage(), lastError.getSQLState(), lastError.getErrorCode(), updateCounts);
+                throw new BatchUpdateException(lastError.getMessage(), lastError.getSQLState(),
+                        lastError.getErrorCode(), updateCounts);
             }
             loggerExternal.exiting(getClassNameLogging(), "executeBatch", updateCounts);
             return updateCounts;
 
-        }
-        finally {
+        } finally {
             // Regardless what happens, always clear out the batch after execution.
             // Note: Don't use the clearBatch API as it checks that the statement is
             // not closed, which it might be in the event of a severe error.
@@ -1764,11 +1859,11 @@ public class SQLServerStatement implements ISQLServerStatement {
         }
     } // executeBatch
 
-    public long[] executeLargeBatch() throws SQLServerException, BatchUpdateException {
-        DriverJDBCVersion.checkSupportsJDBC42();
+    @Override
+    public long[] executeLargeBatch() throws SQLServerException, BatchUpdateException, SQLTimeoutException {
 
         loggerExternal.entering(getClassNameLogging(), "executeLargeBatch");
-        if (loggerExternal.isLoggable(Level.FINER) && Util.IsActivityTraceOn()) {
+        if (loggerExternal.isLoggable(Level.FINER) && Util.isActivityTraceOn()) {
             loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
         }
         checkClosed();
@@ -1796,25 +1891,22 @@ public class SQLServerStatement implements ISQLServerStatement {
                     if (0 == batchNum) {
                         // First time through, execute the entire set of batches and return the first result
                         executeStatement(new StmtBatchExecCmd(this));
-                    }
-                    else {
+                    } else {
                         // Subsequent times through, just get the result from the next batch.
                         // If there are not enough results (update counts) to satisfy the number of batches,
                         // then bail, leaving EXECUTE_FAILED in the remaining slots of the update count array.
                         startResults();
-                        if (!getNextResult())
+                        if (!getNextResult(true))
                             break;
                     }
 
                     if (null != resultSet) {
-                        SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_resultsetGeneratedForUpdate"),
-                                null, true);
-                    }
-                    else {
+                        SQLServerException.makeFromDriverError(connection, this,
+                                SQLServerException.getErrString("R_resultsetGeneratedForUpdate"), null, true);
+                    } else {
                         updateCounts[batchNum] = (-1 != updateCount) ? updateCount : Statement.SUCCESS_NO_INFO;
                     }
-                }
-                catch (SQLServerException e) {
+                } catch (SQLServerException e) {
                     // If the failure was severe enough to close the connection or roll back a
                     // manual transaction, then propagate the error up as a SQLServerException
                     // now, rather than continue with the batch.
@@ -1834,8 +1926,7 @@ public class SQLServerStatement implements ISQLServerStatement {
             loggerExternal.exiting(getClassNameLogging(), "executeLargeBatch", updateCounts);
             return updateCounts;
 
-        }
-        finally {
+        } finally {
             // Regardless what happens, always clear out the batch after execution.
             // Note: Don't use the clearBatch API as it checks that the statement is
             // not closed, which it might be in the event of a severe error.
@@ -1844,16 +1935,18 @@ public class SQLServerStatement implements ISQLServerStatement {
     } // executeLargeBatch
 
     /**
-     * Return the statement's connection
+     * Returns the statement's connection.
      * 
      * @throws SQLServerException
-     *             when an error occurs
+     *         when an error occurs
      * @return the connection
      */
-    /* L0 */ public final java.sql.Connection getConnection() throws SQLServerException {
+    @Override
+    public final java.sql.Connection getConnection() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getConnection");
         if (bIsClosed) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_statementIsClosed"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_statementIsClosed"), null, false);
         }
         java.sql.Connection con = connection.getConnection();
         loggerExternal.exiting(getClassNameLogging(), "getConnection", con);
@@ -1862,21 +1955,13 @@ public class SQLServerStatement implements ISQLServerStatement {
 
     /* ----------------- Server side cursor support -------------------------- */
 
-    /**
-     * Open a server side cursor.
-     *
-     * @param sql
-     *            The SQL query.
-     * @exception SQLServerException
-     *                The SQL query was invalid.
-     */
-
     final int getResultSetScrollOpt() {
         int scrollOpt = (null == inOutParam) ? 0 : TDS.SCROLLOPT_PARAMETERIZED_STMT;
 
         switch (resultSetType) {
             case SQLServerResultSet.TYPE_SS_SERVER_CURSOR_FORWARD_ONLY:
-                return scrollOpt | ((ResultSet.CONCUR_READ_ONLY == resultSetConcurrency) ? TDS.SCROLLOPT_FAST_FORWARD : TDS.SCROLLOPT_FORWARD_ONLY);
+                return scrollOpt | ((ResultSet.CONCUR_READ_ONLY == resultSetConcurrency) ? TDS.SCROLLOPT_FAST_FORWARD
+                                                                                         : TDS.SCROLLOPT_FORWARD_ONLY);
 
             case SQLServerResultSet.TYPE_SS_SCROLL_DYNAMIC:
                 return scrollOpt | TDS.SCROLLOPT_DYNAMIC;
@@ -1888,9 +1973,9 @@ public class SQLServerStatement implements ISQLServerStatement {
                 return scrollOpt | TDS.SCROLLOPT_STATIC;
 
             // Other (invalid) values were caught by the constructor.
+            default:
+                return 0;
         }
-
-        return 0;
     }
 
     final int getResultSetCCOpt() {
@@ -1909,16 +1994,15 @@ public class SQLServerStatement implements ISQLServerStatement {
                 return TDS.CCOPT_OPTIMISTIC_CCVAL | TDS.CCOPT_UPDT_IN_PLACE | TDS.CCOPT_ALLOW_DIRECT;
 
             // Other (invalid) values were caught by the constructor.
+            default:
+                return 0;
         }
-
-        return 0;
     }
 
-    private void doExecuteCursored(StmtExecCmd execCmd,
-            String sql) throws SQLServerException {
+    private void doExecuteCursored(StmtExecCmd execCmd, String sql) throws SQLServerException {
         if (stmtlogger.isLoggable(java.util.logging.Level.FINER)) {
-            stmtlogger.finer(toString() + " Execute for cursor open" + " SQL:" + sql + " Scrollability:" + getResultSetScrollOpt() + " Concurrency:"
-                    + getResultSetCCOpt());
+            stmtlogger.finer(toString() + " Execute for cursor open" + " SQL:" + sql + " Scrollability:"
+                    + getResultSetScrollOpt() + " Concurrency:" + getResultSetCCOpt());
         }
 
         executedSqlDirectly = false;
@@ -1926,8 +2010,8 @@ public class SQLServerStatement implements ISQLServerStatement {
         TDSWriter tdsWriter = execCmd.startRequest(TDS.PKT_RPC);
         tdsWriter.writeShort((short) 0xFFFF); // procedure name length -> use ProcIDs
         tdsWriter.writeShort(TDS.PROCID_SP_CURSOROPEN);
-        tdsWriter.writeByte((byte) 0);  // RPC procedure option 1
-        tdsWriter.writeByte((byte) 0);  // RPC procedure option 2
+        tdsWriter.writeByte((byte) 0); // RPC procedure option 1
+        tdsWriter.writeByte((byte) 0); // RPC procedure option 2
 
         // <cursor> OUT
         tdsWriter.writeRPCInt(null, 0, true);
@@ -1946,12 +2030,13 @@ public class SQLServerStatement implements ISQLServerStatement {
 
         ensureExecuteResultsReader(execCmd.startResponse(isResponseBufferingAdaptive));
         startResults();
-        getNextResult();
+        getNextResult(true);
     }
 
     /* JDBC 3.0 */
 
-    /* L3 */ public final int getResultSetHoldability() throws SQLException {
+    @Override
+    public final int getResultSetHoldability() throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "getResultSetHoldability");
         checkClosed();
         int holdability = connection.getHoldability(); // For SQL Server must be the same as the connection
@@ -1959,11 +2044,12 @@ public class SQLServerStatement implements ISQLServerStatement {
         return holdability;
     }
 
+    @Override
     public final boolean execute(java.lang.String sql,
-            int autoGeneratedKeys) throws SQLServerException {
+            int autoGeneratedKeys) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER)) {
             loggerExternal.entering(getClassNameLogging(), "execute", new Object[] {sql, autoGeneratedKeys});
-            if (Util.IsActivityTraceOn()) {
+            if (Util.isActivityTraceOn()) {
                 loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
             }
         }
@@ -1979,37 +2065,41 @@ public class SQLServerStatement implements ISQLServerStatement {
         return null != resultSet;
     }
 
+    @Override
     public final boolean execute(java.lang.String sql,
-            int[] columnIndexes) throws SQLServerException {
+            int[] columnIndexes) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "execute", new Object[] {sql, columnIndexes});
         checkClosed();
         if (columnIndexes == null || columnIndexes.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         boolean fSuccess = execute(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "execute", fSuccess);
         return fSuccess;
     }
 
+    @Override
     public final boolean execute(java.lang.String sql,
-            java.lang.String[] columnNames) throws SQLServerException {
+            java.lang.String[] columnNames) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "execute", new Object[] {sql, columnNames});
         checkClosed();
         if (columnNames == null || columnNames.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         boolean fSuccess = execute(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "execute", fSuccess);
         return fSuccess;
     }
 
-    public final int executeUpdate(String sql,
-            int autoGeneratedKeys) throws SQLServerException {
+    @Override
+    public final int executeUpdate(String sql, int autoGeneratedKeys) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER)) {
             loggerExternal.entering(getClassNameLogging(), "executeUpdate", new Object[] {sql, autoGeneratedKeys});
-            if (Util.IsActivityTraceOn()) {
+            if (Util.isActivityTraceOn()) {
                 loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
             }
         }
@@ -2023,20 +2113,21 @@ public class SQLServerStatement implements ISQLServerStatement {
 
         // this shouldn't happen, caller probably meant to call executeLargeUpdate
         if (updateCount < Integer.MIN_VALUE || updateCount > Integer.MAX_VALUE)
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_updateCountOutofRange"), null, true);
 
         loggerExternal.exiting(getClassNameLogging(), "executeUpdate", updateCount);
 
         return (int) updateCount;
     }
 
+    @Override
     public final long executeLargeUpdate(String sql,
-            int autoGeneratedKeys) throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
+            int autoGeneratedKeys) throws SQLServerException, SQLTimeoutException {
 
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER)) {
             loggerExternal.entering(getClassNameLogging(), "executeLargeUpdate", new Object[] {sql, autoGeneratedKeys});
-            if (Util.IsActivityTraceOn()) {
+            if (Util.isActivityTraceOn()) {
                 loggerExternal.finer(toString() + " ActivityId: " + ActivityCorrelator.getNext().toString());
             }
         }
@@ -2051,62 +2142,69 @@ public class SQLServerStatement implements ISQLServerStatement {
         return updateCount;
     }
 
+    @Override
     public final int executeUpdate(java.lang.String sql,
-            int[] columnIndexes) throws SQLServerException {
+            int[] columnIndexes) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "executeUpdate", new Object[] {sql, columnIndexes});
         checkClosed();
         if (columnIndexes == null || columnIndexes.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         int count = executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "executeUpdate", count);
         return count;
     }
 
+    @Override
     public final long executeLargeUpdate(java.lang.String sql,
-            int[] columnIndexes) throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
+            int[] columnIndexes) throws SQLServerException, SQLTimeoutException {
 
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "executeLargeUpdate", new Object[] {sql, columnIndexes});
         checkClosed();
         if (columnIndexes == null || columnIndexes.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         long count = executeLargeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "executeLargeUpdate", count);
         return count;
     }
 
+    @Override
     public final int executeUpdate(java.lang.String sql,
-            String[] columnNames) throws SQLServerException {
+            String[] columnNames) throws SQLServerException, SQLTimeoutException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "executeUpdate", new Object[] {sql, columnNames});
         checkClosed();
         if (columnNames == null || columnNames.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         int count = executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "executeUpdate", count);
         return count;
     }
 
+    @Override
     public final long executeLargeUpdate(java.lang.String sql,
-            String[] columnNames) throws SQLServerException {
-        DriverJDBCVersion.checkSupportsJDBC42();
+            String[] columnNames) throws SQLServerException, SQLTimeoutException {
 
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "executeLargeUpdate", new Object[] {sql, columnNames});
         checkClosed();
         if (columnNames == null || columnNames.length != 1) {
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_invalidColumnArrayLength"), null, false);
         }
         long count = executeLargeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
         loggerExternal.exiting(getClassNameLogging(), "executeLargeUpdate", count);
         return count;
     }
 
+    @Override
     public final ResultSet getGeneratedKeys() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getGeneratedKeys");
         checkClosed();
@@ -2117,8 +2215,9 @@ public class SQLServerStatement implements ISQLServerStatement {
             // Generated keys are returned in a ResultSet result right after the update count.
             // Try to get that ResultSet. If there are no more results after the update count,
             // or if the next result isn't a ResultSet, then something is wrong.
-            if (!getNextResult() || null == resultSet) {
-                SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_statementMustBeExecuted"), null, false);
+            if (!getNextResult(true) || null == resultSet) {
+                SQLServerException.makeFromDriverError(connection, this,
+                        SQLServerException.getErrString("R_statementMustBeExecuted"), null, false);
             }
 
             autoGeneratedKeys = resultSet;
@@ -2128,23 +2227,25 @@ public class SQLServerStatement implements ISQLServerStatement {
         return autoGeneratedKeys;
     }
 
-    /* L3 */ public final boolean getMoreResults(int mode) throws SQLServerException {
+    @Override
+    public final boolean getMoreResults(int mode) throws SQLException {
         if (loggerExternal.isLoggable(java.util.logging.Level.FINER))
             loggerExternal.entering(getClassNameLogging(), "getMoreResults", mode);
         checkClosed();
-        if (KEEP_CURRENT_RESULT == mode)
-            NotImplemented();
+        if (KEEP_CURRENT_RESULT == mode) {
+            SQLServerException.throwNotSupportedException(connection, this);
+        }
 
         if (CLOSE_CURRENT_RESULT != mode && CLOSE_ALL_RESULTS != mode)
-            SQLServerException.makeFromDriverError(connection, this, SQLServerException.getErrString("R_modeSuppliedNotValid"), null, true);
+            SQLServerException.makeFromDriverError(connection, this,
+                    SQLServerException.getErrString("R_modeSuppliedNotValid"), null, true);
 
         ResultSet rsPrevious = resultSet;
         boolean fResults = getMoreResults();
         if (rsPrevious != null) {
             try {
                 rsPrevious.close();
-            }
-            catch (SQLException e) {
+            } catch (SQLException e) {
                 throw new SQLServerException(e.getMessage(), null, 0, e);
             }
         }
@@ -2153,6 +2254,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         return fResults;
     }
 
+    @Override
     public boolean isClosed() throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "isClosed");
         boolean result = bIsClosed || connection.isSessionUnAvailable();
@@ -2160,6 +2262,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         return result;
     }
 
+    @Override
     public boolean isCloseOnCompletion() throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "isCloseOnCompletion");
         checkClosed();
@@ -2167,6 +2270,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         return isCloseOnCompletion;
     }
 
+    @Override
     public boolean isPoolable() throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "isPoolable");
         checkClosed();
@@ -2174,6 +2278,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         return stmtPoolable;
     }
 
+    @Override
     public void setPoolable(boolean poolable) throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "setPoolable", poolable);
         checkClosed();
@@ -2181,6 +2286,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setPoolable");
     }
 
+    @Override
     public boolean isWrapperFor(Class<?> iface) throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "isWrapperFor");
         boolean f = iface.isInstance(this);
@@ -2188,13 +2294,13 @@ public class SQLServerStatement implements ISQLServerStatement {
         return f;
     }
 
+    @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
         loggerExternal.entering(getClassNameLogging(), "unwrap");
         T t;
         try {
             t = iface.cast(this);
-        }
-        catch (ClassCastException e) {
+        } catch (ClassCastException e) {
             throw new SQLServerException(e.getMessage(), e);
         }
         loggerExternal.exiting(getClassNameLogging(), "unwrap", t);
@@ -2219,18 +2325,18 @@ public class SQLServerStatement implements ISQLServerStatement {
     // Enables handling very large responses, values
     // Disadvantages
     // Reduced concurrency on the server
+
+    @Override
     public final void setResponseBuffering(String value) throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "setResponseBuffering", value);
         checkClosed();
         if ("full".equalsIgnoreCase(value)) {
             isResponseBufferingAdaptive = false;
             wasResponseBufferingSet = true;
-        }
-        else if ("adaptive".equalsIgnoreCase(value)) {
+        } else if ("adaptive".equalsIgnoreCase(value)) {
             isResponseBufferingAdaptive = true;
             wasResponseBufferingSet = true;
-        }
-        else {
+        } else {
             MessageFormat form = new MessageFormat(SQLServerException.getErrString("R_invalidresponseBuffering"));
             Object[] msgArgs = {value};
             SQLServerException.makeFromDriverError(connection, this, form.format(msgArgs), null, false);
@@ -2238,6 +2344,7 @@ public class SQLServerStatement implements ISQLServerStatement {
         loggerExternal.exiting(getClassNameLogging(), "setResponseBuffering");
     }
 
+    @Override
     public final String getResponseBuffering() throws SQLServerException {
         loggerExternal.entering(getClassNameLogging(), "getResponseBuffering");
         checkClosed();
@@ -2247,8 +2354,7 @@ public class SQLServerStatement implements ISQLServerStatement {
                 responseBuff = "adaptive";
             else
                 responseBuff = "full";
-        }
-        else {
+        } else {
             responseBuff = connection.getResponseBuffering();
         }
         loggerExternal.exiting(getClassNameLogging(), "getResponseBuffering", responseBuff);
@@ -2256,13 +2362,15 @@ public class SQLServerStatement implements ISQLServerStatement {
     }
 }
 
+
 /**
- * Helper class that does some basic parsing work for SQL statements that are stored procedure calls.
+ * Provides a helper class that does some basic parsing work for SQL statements that are stored procedure calls.
  *
- * - Determines whether the SQL uses JDBC call syntax ("{[? =] call procedure_name...}") or T-SQL EXECUTE syntax ("EXEC [@p0 =] procedure_name...").
- * If JDBC call syntax is present, it gets rewritten as T-SQL EXECUTE syntax.
+ * - Determines whether the SQL uses JDBC call syntax ("{[? =] call procedure_name...}") or T-SQL EXECUTE syntax ("EXEC
+ * [@p0 =] procedure_name..."). If JDBC call syntax is present, it gets rewritten as T-SQL EXECUTE syntax.
  *
- * - Determines whether the caller expects a return value from the stored procedure (see the optional return value syntax in [] above).
+ * - Determines whether the caller expects a return value from the stored procedure (see the optional return value
+ * syntax in [] above).
  *
  * - Extracts the stored procedure name from the call.
  *
@@ -2282,16 +2390,17 @@ final class JDBCSyntaxTranslator {
     }
 
     /*
-     * SQL Identifier regex
-     *
-     * Loosely follows the spec'd SQL identifier syntax: - anything between escape characters (square brackets or double quotes), including escaped
-     * escape characters, OR - any contiguous string of non-whitespace characters. - including multipart identifiers
+     * SQL Identifier regex Loosely follows the spec'd SQL identifier syntax: - anything between escape characters
+     * (square brackets or double quotes), including escaped escape characters, OR - any contiguous string of
+     * non-whitespace characters. - including multipart identifiers
      */
     private final static String sqlIdentifierPart = "(?:(?:\\[(?:[^\\]]|(?:\\]\\]))+?\\])|(?:\"(?:[^\"]|(?:\"\"))+?\")|(?:\\S+?))";
 
-    private final static String sqlIdentifierWithoutGroups = "(" + sqlIdentifierPart + "(?:\\." + sqlIdentifierPart + "){0,3}?)";
+    private final static String sqlIdentifierWithoutGroups = "(" + sqlIdentifierPart + "(?:\\." + sqlIdentifierPart
+            + "){0,3}?)";
 
-    private final static String sqlIdentifierWithGroups = "(" + sqlIdentifierPart + ")" + "(?:\\." + "(" + sqlIdentifierPart + "))?";
+    private final static String sqlIdentifierWithGroups = "(" + sqlIdentifierPart + ")" + "(?:\\." + "("
+            + sqlIdentifierPart + "))?";
 
     // This is used in three part name matching.
     static String getSQLIdentifierWithGroups() {
@@ -2299,30 +2408,23 @@ final class JDBCSyntaxTranslator {
     }
 
     /*
-     * JDBC call syntax regex
-     *
-     * From the JDBC spec: {call procedure_name} {call procedure_name(?, ?, ...)} {? = call procedure_name[(?, ?, ...)]}
-     *
-     * allowing for arbitrary amounts of whitespace in the obvious places.
+     * JDBC call syntax regex From the JDBC spec: {call procedure_name} {call procedure_name(?, ?, ...)} {? = call
+     * procedure_name[(?, ?, ...)]} allowing for arbitrary amounts of whitespace in the obvious places.
      */
     private final static Pattern jdbcCallSyntax = Pattern
-            .compile("(?s)\\s*?\\{\\s*?(\\?\\s*?=)?\\s*?[cC][aA][lL][lL]\\s+?" + sqlIdentifierWithoutGroups + "(?:\\s*?\\((.*)\\))?\\s*\\}.*+");
+            .compile("(?s)\\s*?\\{\\s*?(\\?\\s*?=)?\\s*?[cC][aA][lL][lL]\\s+?" + sqlIdentifierWithoutGroups
+                    + "(?:\\s*?\\((.*)\\))?\\s*\\}.*+");
 
     /*
-     * T-SQL EXECUTE syntax regex
-     *
-     * EXEC | EXECUTE [@return_result =] procedure_name [parameters]
-     *
-     * allowing for arbitrary amounts of whitespace in the obvious places.
+     * T-SQL EXECUTE syntax regex EXEC | EXECUTE [@return_result =] procedure_name [parameters] allowing for arbitrary
+     * amounts of whitespace in the obvious places.
      */
-    private final static Pattern sqlExecSyntax = Pattern.compile("\\s*?[eE][xX][eE][cC](?:[uU][tT][eE])??\\s+?(" + sqlIdentifierWithoutGroups
-            + "\\s*?=\\s+?)??" + sqlIdentifierWithoutGroups + "(?:$|(?:\\s+?.*+))");
+    private final static Pattern sqlExecSyntax = Pattern.compile("\\s*?[eE][xX][eE][cC](?:[uU][tT][eE])??\\s+?("
+            + sqlIdentifierWithoutGroups + "\\s*?=\\s+?)??" + sqlIdentifierWithoutGroups + "(?:$|(?:\\s+?.*+))");
 
     /*
-     * JDBC limit escape syntax
-     *
-     * From the JDBC spec: {LIMIT <rows> [OFFSET <row_offset>]} The driver currently does not support the OFFSET part. It will throw an exception if
-     * used.
+     * JDBC limit escape syntax From the JDBC spec: {LIMIT <rows> [OFFSET <row_offset>]} The driver currently does not
+     * support the OFFSET part. It will throw an exception if used.
      */
     enum State {
         START,
@@ -2335,49 +2437,56 @@ final class JDBCSyntaxTranslator {
         OFFSET,
         QUOTE,
         PROCESS
-    };
+    }
 
-    // This pattern matches the LIMIT syntax with an OFFSET clause. The driver does not support OFFSET expression in the LIMIT clause.
+    // This pattern matches the LIMIT syntax with an OFFSET clause. The driver does not support OFFSET expression in the
+    // LIMIT clause.
     // It will throw an exception if OFFSET is present in the LIMIT escape syntax.
     private final static Pattern limitSyntaxWithOffset = Pattern
             .compile("\\{\\s*[lL][iI][mM][iI][tT]\\s+(.*)\\s+[oO][fF][fF][sS][eE][tT]\\s+(.*)\\}");
-    // This pattern is used to determine if the query has LIMIT escape syntax. If so, then the query is further processed to translate the syntax.
+    // This pattern is used to determine if the query has LIMIT escape syntax. If so, then the query is further
+    // processed to translate the syntax.
     private final static Pattern limitSyntaxGeneric = Pattern
             .compile("\\{\\s*[lL][iI][mM][iI][tT]\\s+(.*)(\\s+[oO][fF][fF][sS][eE][tT](.*)\\}|\\s*\\})");
 
     private final static Pattern selectPattern = Pattern.compile("([sS][eE][lL][eE][cC][tT])\\s+");
 
     // OPENQUERY ( linked_server ,'query' )
-    private final static Pattern openQueryPattern = Pattern.compile("[oO][pP][eE][nN][qQ][uU][eE][rR][yY]\\s*\\(.*,\\s*'(.*)'\\s*\\)");
+    private final static Pattern openQueryPattern = Pattern
+            .compile("[oO][pP][eE][nN][qQ][uU][eE][rR][yY]\\s*\\(.*,\\s*'(.*)'\\s*\\)");
     /*
-     * OPENROWSET ( 'provider_name', { 'datasource' ; 'user_id' ; 'password' | 'provider_string' }, { [ catalog. ] [ schema. ] object | 'query' } )
+     * OPENROWSET ( 'provider_name', { 'datasource' ; 'user_id' ; 'password' | 'provider_string' }, { [ catalog. ] [
+     * schema. ] object | 'query' } )
      */
-    private final static Pattern openRowsetPattern = Pattern.compile("[oO][pP][eE][nN][rR][oO][wW][sS][eE][tT]\\s*\\(.*,.*,\\s*'(.*)'\\s*\\)");
+    private final static Pattern openRowsetPattern = Pattern
+            .compile("[oO][pP][eE][nN][rR][oO][wW][sS][eE][tT]\\s*\\(.*,.*,\\s*'(.*)'\\s*\\)");
 
     /*
      * {limit 30} {limit ?} {limit (?)}
      */
-    private final static Pattern limitOnlyPattern = Pattern.compile("\\{\\s*[lL][iI][mM][iI][tT]\\s+(((\\(|\\s)*)(\\d*|\\?)((\\)|\\s)*))\\s*\\}");
+    private final static Pattern limitOnlyPattern = Pattern
+            .compile("\\{\\s*[lL][iI][mM][iI][tT]\\s+(((\\(|\\s)*)(\\d*|\\?)((\\)|\\s)*))\\s*\\}");
 
     /**
-     * This function translates the LIMIT escape syntax, {LIMIT <row> [OFFSET <offset>]} SQL Server does not support LIMIT syntax, the LIMIT escape
-     * syntax is thus translated to use "TOP" syntax The OFFSET clause is not supported, and will throw an exception if used.
+     * Translates the LIMIT escape syntax, {LIMIT <row> [OFFSET <offset>]} SQL Server does not support LIMIT syntax, the
+     * LIMIT escape syntax is thus translated to use "TOP" syntax The OFFSET clause is not supported, and will throw an
+     * exception if used.
      * 
-     * @param sql the SQL query
+     * @param sql
+     *        the SQL query
      * 
-     * @param indx Position in the query from where to start translation
+     * @param indx
+     *        Position in the query from where to start translation
      * 
-     * @param endChar The character that marks the end of translation
+     * @param endChar
+     *        The character that marks the end of translation
      * 
      * @throws SQLServerException
      * 
      * @return the number of characters that have been translated
      * 
      */
-
-    int translateLimit(StringBuffer sql,
-            int indx,
-            char endChar) throws SQLServerException {
+    int translateLimit(StringBuffer sql, int indx, char endChar) throws SQLServerException {
         Matcher selectMatcher = selectPattern.matcher(sql);
         Matcher openQueryMatcher = openQueryPattern.matcher(sql);
         Matcher openRowsetMatcher = openRowsetPattern.matcher(sql);
@@ -2396,39 +2505,40 @@ final class JDBCSyntaxTranslator {
                     nextState = State.PROCESS;
                     break;
                 case PROCESS:
-                    // The search for endChar should come before the search for quote (') as openquery has quote(') as the endChar
+                    // The search for endChar should come before the search for quote (') as openquery has quote(') as
+                    // the endChar
                     if (endChar == ch) {
                         nextState = State.END;
-                    }
-                    else if ('\'' == ch) {
+                    } else if ('\'' == ch) {
                         nextState = State.QUOTE;
-                    }
-                    else if ('(' == ch) {
+                    } else if ('(' == ch) {
                         nextState = State.SUBQUERY;
-                    }
-                    else if (limitMatcher.find(indx) && indx == limitMatcher.start()) {
+                    } else if (limitMatcher.find(indx) && indx == limitMatcher.start()) {
                         nextState = State.LIMIT;
-                    }
-                    else if (offsetMatcher.find(indx) && indx == offsetMatcher.start()) {
+                    } else if (offsetMatcher.find(indx) && indx == offsetMatcher.start()) {
                         nextState = State.OFFSET;
-                    }
-                    else if (openQueryMatcher.find(indx) && indx == openQueryMatcher.start()) {
+                    } else if (openQueryMatcher.find(indx) && indx == openQueryMatcher.start()) {
                         nextState = State.OPENQUERY;
-                    }
-                    else if (openRowsetMatcher.find(indx) && indx == openRowsetMatcher.start()) {
+                    } else if (openRowsetMatcher.find(indx) && indx == openRowsetMatcher.start()) {
                         nextState = State.OPENROWSET;
-                    }
-                    else if (selectMatcher.find(indx) && indx == selectMatcher.start()) {
+                    } else if (selectMatcher.find(indx) && indx == selectMatcher.start()) {
                         nextState = State.SELECT;
-                    }
-                    else
+                    } else
                         indx++;
                     break;
                 case OFFSET:
                     // throw exception as OFFSET is not supported
-                    throw new SQLServerException(SQLServerException.getErrString("R_limitOffsetNotSupported"), null, // SQLState is null as this error
-                                                                                                                     // is generated in the driver
-                            0, // Use 0 instead of DriverError.NOT_SET to use the correct constructor
+                    // SQLState is null as this error is generated in the driver
+                    throw new SQLServerException(SQLServerException.getErrString("R_limitOffsetNotSupported"), null, 0, // Use
+                                                                                                                        // 0
+                                                                                                                        // instead
+                                                                                                                        // of
+                                                                                                                        // DriverError.NOT_SET
+                                                                                                                        // to
+                                                                                                                        // use
+                                                                                                                        // the
+                                                                                                                        // correct
+                                                                                                                        // constructor
                             null);
                 case LIMIT:
                     // Check if the number of opening/closing parentheses surrounding the digits or "?" in LIMIT match
@@ -2445,17 +2555,17 @@ final class JDBCSyntaxTranslator {
                         closingParentheses++;
                     }
                     if (openingParentheses != closingParentheses) {
-                        throw new SQLServerException(SQLServerException.getErrString("R_limitEscapeSyntaxError"), null, // SQLState is null as this
-                                                                                                                        // error is generated in the
-                                                                                                                        // driver
+                        // SQLState is null as this error is generated in the driver
+                        throw new SQLServerException(SQLServerException.getErrString("R_limitEscapeSyntaxError"), null,
                                 0, // Use 0 instead of DriverError.NOT_SET to use the correct constructor
                                 null);
                     }
 
                     /*
-                     * 'topPosition' is a stack that keeps track of the positions where the next "TOP" should be inserted. The SELECT expressions are
-                     * matched with the closest LIMIT expressions unless in a subquery with explicit parentheses, that's why it needs to be a stack.
-                     * To translate, we add the clause <TOP rows> after SELECT and delete the clause {LIMIT rows}.
+                     * 'topPosition' is a stack that keeps track of the positions where the next "TOP" should be
+                     * inserted. The SELECT expressions are matched with the closest LIMIT expressions unless in a
+                     * subquery with explicit parentheses, that's why it needs to be a stack. To translate, we add the
+                     * clause <TOP rows> after SELECT and delete the clause {LIMIT rows}.
                      */
                     if (!topPosition.empty()) {
                         Integer top = topPosition.pop();
@@ -2466,16 +2576,15 @@ final class JDBCSyntaxTranslator {
                         if ('?' == rows.charAt(0)) {
                             // For parameterized queries the '?' needs to wrapped in parentheses.
                             sql.insert(top, " TOP (" + rows + ")");
-                            // add the letters/spaces inserted with TOP, add the digits from LIMIT, subtract one because the
+                            // add the letters/spaces inserted with TOP, add the digits from LIMIT, subtract one because
+                            // the
                             // current letter at the index is deleted.
                             indx += 7 + rows.length() - 1;
-                        }
-                        else {
+                        } else {
                             sql.insert(top, " TOP " + rows);
                             indx += 5 + rows.length() - 1;
                         }
-                    }
-                    else {
+                    } else {
                         // Could not match LIMIT with a SELECT, should never occur.
                         // But if it does, just ignore
                         // Matcher.end() returns offset after the last character of matched string
@@ -2498,12 +2607,10 @@ final class JDBCSyntaxTranslator {
                         indx++;
                         if (sql.length() > indx && '\'' == sql.charAt(indx)) {
                             nextState = State.QUOTE;
-                        }
-                        else {
+                        } else {
                             nextState = State.PROCESS;
                         }
-                    }
-                    else {
+                    } else {
                         nextState = State.QUOTE;
                     }
                     break;
@@ -2535,7 +2642,7 @@ final class JDBCSyntaxTranslator {
                     // throw
                     break;
             }
-        }// end of while
+        } // end of while
         return indx - startIndx;
     }
 
@@ -2551,8 +2658,7 @@ final class JDBCSyntaxTranslator {
             procedureName = matcher.group(2);
             String args = matcher.group(3);
             sql = "EXEC " + (hasReturnValueSyntax ? "? = " : "") + procedureName + ((null != args) ? (" " + args) : "");
-        }
-        else {
+        } else {
             matcher = sqlExecSyntax.matcher(sql);
             if (matcher.matches()) {
 
@@ -2563,15 +2669,12 @@ final class JDBCSyntaxTranslator {
             }
         }
 
-        // LIMIT escape is introduced in JDBC 4.1. Make sure versions lower than 4.1 do not have this feature.
-        if (((4 == DriverJDBCVersion.major) && (1 <= DriverJDBCVersion.minor)) || (4 < DriverJDBCVersion.major)) {
-            // Search for LIMIT escape syntax. Do further processing if present.
-            matcher = limitSyntaxGeneric.matcher(sql);
-            if (matcher.find()) {
-                StringBuffer sqlbuf = new StringBuffer(sql);
-                translateLimit(sqlbuf, 0, '\0');
-                return sqlbuf.toString();
-            }
+        // Search for LIMIT escape syntax. Do further processing if present.
+        matcher = limitSyntaxGeneric.matcher(sql);
+        if (matcher.find()) {
+            StringBuffer sqlbuf = new StringBuffer(sql);
+            translateLimit(sqlbuf, 0, '\0');
+            return sqlbuf.toString();
         }
 
         // 'sql' is modified if CALL or LIMIT escape sequence is present, Otherwise pass it straight through.

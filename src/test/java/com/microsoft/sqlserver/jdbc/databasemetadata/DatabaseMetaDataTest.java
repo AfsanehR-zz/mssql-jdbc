@@ -1,17 +1,17 @@
 /*
- * Microsoft JDBC Driver for SQL Server
- * 
- * Copyright(c) Microsoft Corporation All rights reserved.
- * 
- * This program is made available under the terms of the MIT License. See the LICENSE file in the project root for more information.
+ * Microsoft JDBC Driver for SQL Server Copyright(c) Microsoft Corporation All rights reserved. This program is made
+ * available under the terms of the MIT License. See the LICENSE file in the project root for more information.
  */
 package com.microsoft.sqlserver.jdbc.databasemetadata;
 
+import static org.junit.Assert.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -20,27 +20,39 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.text.MessageFormat;
+import java.util.UUID;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.runner.JUnitPlatform;
 import org.junit.runner.RunWith;
 
+import com.microsoft.sqlserver.jdbc.RandomUtil;
 import com.microsoft.sqlserver.jdbc.SQLServerDatabaseMetaData;
-import com.microsoft.sqlserver.jdbc.SQLServerException;
 import com.microsoft.sqlserver.jdbc.StringUtils;
+import com.microsoft.sqlserver.jdbc.TestResource;
+import com.microsoft.sqlserver.jdbc.TestUtils;
+import com.microsoft.sqlserver.testframework.AbstractSQLGenerator;
 import com.microsoft.sqlserver.testframework.AbstractTest;
-import com.microsoft.sqlserver.testframework.Utils;
+import com.microsoft.sqlserver.testframework.Constants;
+
 
 /**
  * Test class for testing DatabaseMetaData.
  */
 @RunWith(JUnitPlatform.class)
 public class DatabaseMetaDataTest extends AbstractTest {
+
+    private static final String tableName = RandomUtil.getIdentifier("DBMetadataTable");
+    private static final String functionName = RandomUtil.getIdentifier("DBMetadataFunction");
 
     /**
      * Verify DatabaseMetaData#isWrapperFor and DatabaseMetaData#unwrap.
@@ -49,7 +61,7 @@ public class DatabaseMetaDataTest extends AbstractTest {
      */
     @Test
     public void testDatabaseMetaDataWrapper() throws SQLException {
-        try (Connection con = DriverManager.getConnection(connectionString)) {
+        try (Connection con = getConnection()) {
             DatabaseMetaData databaseMetaData = con.getMetaData();
             assertTrue(databaseMetaData.isWrapperFor(DatabaseMetaData.class));
             assertSame(databaseMetaData, databaseMetaData.unwrap(DatabaseMetaData.class));
@@ -57,286 +69,541 @@ public class DatabaseMetaDataTest extends AbstractTest {
     }
 
     /**
-     * Testing if driver version is matching with manifest file or not. Will be useful while releasing preview / RTW release.
+     * Testing if driver version is matching with manifest file or not. Will be useful while releasing preview / RTW
+     * release.
      * 
-     * //TODO: OSGI: Test for capability 1.7 for JDK 1.7 and 1.8 for 1.8 //Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))" //String
-     * capability = attributes.getValue("Require-Capability");  
+     * //TODO: OSGI: Test for capability 1.7 for JDK 1.7 and 1.8 for 1.8 //Require-Capability:
+     * osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))" //String capability =
+     * attributes.getValue("Require-Capability");
      * 
-     * @throws SQLServerException
-     *             Our Wrapped Exception
      * @throws SQLException
-     *             SQL Exception
+     *         SQL Exception
      * @throws IOException
-     *             IOExcption
+     *         IOExcption
      */
     @Test
-    public void testDriverVersion() throws SQLServerException, SQLException, IOException {
-        String manifestFile = Utils.getCurrentClassPath() + "META-INF/MANIFEST.MF";
+    @Tag(Constants.xGradle)
+    public void testDriverVersion() throws SQLException, IOException {
+        String manifestFile = TestUtils.getCurrentClassPath() + "META-INF/MANIFEST.MF";
         manifestFile = manifestFile.replace("test-classes", "classes");
 
         File f = new File(manifestFile);
 
-        assumeTrue(f.exists(), "Manifest file does not exist on classpath so ignoring test");
+        try (InputStream in = new BufferedInputStream(new FileInputStream(f))) {
+            Manifest manifest = new Manifest(in);
+            Attributes attributes = manifest.getMainAttributes();
+            String buildVersion = attributes.getValue("Bundle-Version");
 
-        InputStream in = new BufferedInputStream(new FileInputStream(f));
-        Manifest manifest = new Manifest(in);
-        Attributes attributes = manifest.getMainAttributes();
-        String buildVersion = attributes.getValue("Bundle-Version");
+            try (Connection conn = getConnection()) {
+                DatabaseMetaData dbmData = conn.getMetaData();
+                String driverVersion = dbmData.getDriverVersion();
 
-        DatabaseMetaData dbmData = connection.getMetaData();
+                // boolean isSnapshot = buildVersion.contains("SNAPSHOT");
 
-        String driverVersion = dbmData.getDriverVersion();
+                // Removing all dots & chars easy for comparing.
+                driverVersion = driverVersion.replaceAll("[^0-9]", "");
+                buildVersion = buildVersion.replaceAll("[^0-9]", "");
 
-        boolean isSnapshot = buildVersion.contains("SNAPSHOT");
+                // Not comparing last build number. We will compare only major.minor.patch
+                driverVersion = driverVersion.substring(0, 3);
+                buildVersion = buildVersion.substring(0, 3);
 
-        // Removing all dots & chars easy for comparing.
-        driverVersion = driverVersion.replaceAll("[^0-9]", "");
-        buildVersion = buildVersion.replaceAll("[^0-9]", "");
-
-        // Not comparing last build number. We will compare only major.minor.patch
-        driverVersion = driverVersion.substring(0, 3);
-        buildVersion = buildVersion.substring(0, 3);
-
-        int intBuildVersion = Integer.valueOf(buildVersion);
-        int intDriverVersion = Integer.valueOf(driverVersion);
-
-        if (isSnapshot) {
-            assertTrue(intDriverVersion < intBuildVersion,
-                    "In case of SNAPSHOT version, build version should be always greater than BuildVersion");
+                int intBuildVersion = Integer.valueOf(buildVersion);
+                int intDriverVersion = Integer.valueOf(driverVersion);
+                assertTrue(intDriverVersion == intBuildVersion, TestResource.getResource("R_buildVersionError"));
+            }
         }
-        else {
-            assertTrue(intDriverVersion == intBuildVersion, "For NON SNAPSHOT versions build & driver versions should match.");
-        }
-
     }
 
     /**
      * Your password should not be in getURL method.
      * 
-     * @throws SQLServerException
      * @throws SQLException
      */
     @Test
-    public void testGetURL() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        String url = databaseMetaData.getURL();
-        url = url.toLowerCase();
-        assertFalse(url.contains("password"), "Get URL should not have password attribute / property.");
+    public void testGetURL() throws SQLException {
+        try (Connection conn = getConnection()) {
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
+            String url = databaseMetaData.getURL();
+            url = url.toLowerCase();
+            assertFalse(url.contains("password"), TestResource.getResource("R_getURLContainsPwd"));
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
+        }
     }
 
     /**
      * Test getUsername.
      * 
-     * @throws SQLServerException
      * @throws SQLException
      */
     @Test
-    public void testDBUserLogin() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
+    @Tag(Constants.xAzureSQLDW)
+    @Tag(Constants.xAzureSQLDB)
+    public void testDBUserLogin() throws SQLException {
+        try (Connection conn = getConnection()) {
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
+            String connectionString = getConnectionString();
+            connectionString = connectionString.toLowerCase();
 
-        String connectionString = getConfiguredProperty("mssql_jdbc_test_connection_properties");
+            int startIndex = 0;
+            int endIndex = 0;
 
-        connectionString = connectionString.toLowerCase();
+            if (connectionString.contains("username")) {
+                startIndex = connectionString.indexOf("username=");
+                endIndex = connectionString.indexOf(Constants.SEMI_COLON, startIndex);
+                startIndex = startIndex + "username=".length();
+            } else if (connectionString.contains("user")) {
+                startIndex = connectionString.indexOf("user=");
+                endIndex = connectionString.indexOf(Constants.SEMI_COLON, startIndex);
+                startIndex = startIndex + "user=".length();
+            }
 
-        int startIndex = 0;
-        int endIndex = 0;
+            String userFromConnectionString = connectionString.substring(startIndex, endIndex);
+            String userName = databaseMetaData.getUserName();
 
-        if (connectionString.contains("username")) {
-            startIndex = connectionString.indexOf("username=");
-            endIndex = connectionString.indexOf(";", startIndex);
-            startIndex = startIndex + "username=".length();
+            assertNotNull(userName, TestResource.getResource("R_userNameNull"));
+            assertTrue(userName.equalsIgnoreCase(userFromConnectionString),
+                    TestResource.getResource("R_userNameNotMatch"));
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
         }
-        else if (connectionString.contains("user")) {
-            startIndex = connectionString.indexOf("user=");
-            endIndex = connectionString.indexOf(";", startIndex);
-            startIndex = startIndex + "user=".length();
-        }
-
-        String userFromConnectionString = connectionString.substring(startIndex, endIndex);
-        String userName = databaseMetaData.getUserName();
-
-        assertNotNull(userName, "databaseMetaData.getUserName() should not be null");
-
-        assertTrue(userName.equalsIgnoreCase(userFromConnectionString),
-                "databaseMetaData.getUserName() should match with UserName from Connection String.");
     }
 
     /**
      * Testing of {@link SQLServerDatabaseMetaData#getSchemas()}
-     * @throws SQLServerException
+     * 
      * @throws SQLException
      */
     @Test
-    public void testDBSchema() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
+    public void testDBSchema() throws SQLException {
+        try (Connection conn = getConnection(); ResultSet rs = conn.getMetaData().getSchemas()) {
 
-        ResultSet rs = databaseMetaData.getSchemas();
+            MessageFormat form = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+            Object[] msgArgs = {"Schema"};
+            while (rs.next()) {
+                assertTrue(!StringUtils.isEmpty(rs.getString(1)), form.format(msgArgs));
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
+        }
+    }
 
-        while (rs.next()) {
-            assertTrue(!StringUtils.isEmpty(rs.getString(1)), "Schema Name should not be Empty");
+    /**
+     * Tests that the catalog parameter containing - is escaped by
+     * {@link SQLServerDatabaseMetaData#getSchemas(String catalog, String schemaPattern)}.
+     * 
+     * @throws SQLException
+     */
+    @Test
+    @Tag(Constants.xAzureSQLDW)
+    @Tag(Constants.xAzureSQLDB)
+    public void testDBSchemasForDashedCatalogName() throws SQLException {
+        UUID id = UUID.randomUUID();
+        String testCatalog = "dash-catalog" + id;
+        String testSchema = "some-schema" + id;
+
+        try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+            TestUtils.dropDatabaseIfExists(testCatalog, connectionString);
+            stmt.execute(String.format("CREATE DATABASE [%s]", testCatalog));
+            stmt.execute(String.format("USE [%s]", testCatalog));
+            stmt.execute(String.format("CREATE SCHEMA [%s]", testSchema));
+
+            try (ResultSet rs = conn.getMetaData().getSchemas(testCatalog, null)) {
+
+                MessageFormat schemaEmptyFormat = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+                Object[] schemaMsgArgs = {"Schema"};
+
+                boolean hasResults = false;
+                boolean hasDashCatalogSchema = false;
+                while (rs.next()) {
+                    hasResults = true;
+                    String schemaName = rs.getString(1);
+                    assertTrue(!StringUtils.isEmpty(schemaName), schemaEmptyFormat.format(schemaMsgArgs));
+                    String catalogName = rs.getString(2);
+                    if (schemaName.equals(testSchema)) {
+                        hasDashCatalogSchema = true;
+                        assertEquals(catalogName, testCatalog);
+                    } else {
+                        assertNull(catalogName);
+                    }
+                }
+
+                MessageFormat atLeastOneFoundFormat = new MessageFormat(TestResource.getResource("R_atLeastOneFound"));
+                assertTrue(hasResults, atLeastOneFoundFormat.format(schemaMsgArgs));
+
+                MessageFormat dashCatalogFormat = new MessageFormat(TestResource.getResource("R_atLeastOneFound"));
+                assertTrue(hasDashCatalogSchema, dashCatalogFormat.format(new Object[] {testSchema}));
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
+        } finally {
+            TestUtils.dropDatabaseIfExists(testCatalog, connectionString);
+        }
+    }
+
+    /**
+     * Tests that the catalog parameter containing - is escaped by
+     * {@link SQLServerDatabaseMetaData#getSchemas(String catalog, String schemaPattern)}.
+     * 
+     * @throws SQLException
+     */
+    @Test
+    @Tag(Constants.xAzureSQLDW)
+    @Tag(Constants.xAzureSQLDB)
+    public void testDBSchemasForDashedCatalogNameWithPattern() throws SQLException {
+        UUID id = UUID.randomUUID();
+        String testCatalog = "dash-catalog" + id;
+        String testSchema = "some-schema" + id;
+
+        try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+            TestUtils.dropDatabaseIfExists(testCatalog, connectionString);
+            stmt.execute(String.format("CREATE DATABASE [%s]", testCatalog));
+            stmt.execute(String.format("USE [%s]", testCatalog));
+            stmt.execute(String.format("CREATE SCHEMA [%s]", testSchema));
+
+            try (ResultSet rs = conn.getMetaData().getSchemas(testCatalog, "some-%")) {
+
+                MessageFormat schemaEmptyFormat = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+                Object[] schemaMsgArgs = {testSchema};
+                Object[] catalogMsgArgs = {testCatalog};
+
+                boolean hasResults = false;
+                while (rs.next()) {
+                    hasResults = true;
+                    String schemaName = rs.getString(1);
+                    String catalogName = rs.getString(2);
+                    assertTrue(!StringUtils.isEmpty(schemaName), schemaEmptyFormat.format(schemaMsgArgs));
+                    assertTrue(!StringUtils.isEmpty(catalogName), schemaEmptyFormat.format(catalogMsgArgs));
+                    assertEquals(schemaName, schemaMsgArgs[0]);
+                    assertEquals(catalogName, catalogMsgArgs[0]);
+                }
+
+                MessageFormat atLeastOneFoundFormat = new MessageFormat(TestResource.getResource("R_atLeastOneFound"));
+                assertTrue(hasResults, atLeastOneFoundFormat.format(schemaMsgArgs));
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
+        } finally {
+            TestUtils.dropDatabaseIfExists(testCatalog, connectionString);
         }
     }
 
     /**
      * Get All Tables.
      * 
-     * @throws SQLServerException
      * @throws SQLException
      */
     @Test
-    public void testDBTables() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        
-        ResultSet rsCatalog = databaseMetaData.getCatalogs();
-        
-        assertTrue(rsCatalog.next(), "We should get atleast one catalog"); 
-        
-        String[] types = {"TABLE"};
-        ResultSet rs = databaseMetaData.getTables(rsCatalog.getString("TABLE_CAT"), null, "%", types);
-        
-        while (rs.next()) {
-            assertTrue(!StringUtils.isEmpty(rs.getString("TABLE_NAME")),"Table Name should not be Empty"); 
+    public void testDBTables() throws SQLException {
+
+        try (Connection con = getConnection()) {
+            DatabaseMetaData databaseMetaData = con.getMetaData();
+            try (ResultSet rsCatalog = databaseMetaData.getCatalogs()) {
+
+                MessageFormat form1 = new MessageFormat(TestResource.getResource("R_atLeastOneFound"));
+                Object[] msgArgs1 = {"catalog"};
+                assertTrue(rsCatalog.next(), form1.format(msgArgs1));
+
+                String[] types = {"TABLE"};
+                try (ResultSet rs = databaseMetaData.getTables(rsCatalog.getString("TABLE_CAT"), null, "%", types)) {
+
+                    MessageFormat form2 = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+                    Object[] msgArgs2 = {"Table"};
+                    while (rs.next()) {
+                        assertTrue(!StringUtils.isEmpty(rs.getString("TABLE_NAME")), form2.format(msgArgs2));
+                    }
+                }
+            }
         }
     }
 
     /**
-     * Testing DB Columns.<p>
+     * Testing DB Columns.
+     * <p>
      * We can Improve this test scenario by following way.
      * <ul>
-     *  <li> Create table with appropriate column size, data types,auto increment, NULLABLE etc.  
-     *  <li> Then get databasemetatadata.getColumns to see if there is any mismatch.
+     * <li>Create table with appropriate column size, data types,auto increment, NULLABLE etc.
+     * <li>Then get databasemetatadata.getColumns to see if there is any mismatch.
      * </ul>
-     * @throws SQLServerException
-     * @throws SQLException
-     */
-    @Test
-    public void testGetDBColumn() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        String[] types = {"TABLE"};
-        ResultSet rs = databaseMetaData.getTables(null, null, "%", types);
-        
-        //Fetch one table
-        assertTrue(rs.next(), "At least one table should be found");
-        
-        //Go through all columns.
-        ResultSet rs1 = databaseMetaData.getColumns(null, null, rs.getString("TABLE_NAME"), "%");
-        
-        while (rs1.next()) {
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_CAT")), "Category Name should not be Empty"); // 1
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_SCHEM")), "SCHEMA Name should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_NAME")), "Table Name should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_NAME")), "COLUMN NAME should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("DATA_TYPE")), "Data Type should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TYPE_NAME")), "Data Type Name should not be Empty"); // 6
-            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_SIZE")), "Column Size should not be Empty"); // 7
-            assertTrue(!StringUtils.isEmpty(rs1.getString("NULLABLE")), "Nullable value should not be Empty"); // 11
-            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_NULLABLE")), "Nullable value should not be Empty"); // 18
-            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_AUTOINCREMENT")), "Nullable value should not be Empty"); // 22
-        }
-    }
-    
-    /**
-     * We can improve this test case by following manner: 
-     * <ul>
-     * <li> We can check if PRIVILEGE is in between CRUD / REFERENCES / SELECT / INSERT etc.
-     * <li> IS_GRANTABLE can have only 2 values YES / NO
-     * </ul>
-     * @throws SQLServerException
-     * @throws SQLException
-     */
-    @Test
-    public void testGetColumnPrivileges() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        String[] types = {"TABLE"};
-        ResultSet rsTables = databaseMetaData.getTables(null, null, "%", types);
-        
-        //Fetch one table
-        assertTrue(rsTables.next(), "At least one table should be found");
-        
-        //Go through all columns.
-        ResultSet rs1 = databaseMetaData.getColumnPrivileges(null, null, rsTables.getString("TABLE_NAME"), "%");
-        
-        while(rs1.next()) {
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_CAT")),"Category Name should not be Empty"); //1
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_SCHEM")),"SCHEMA Name should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_NAME")),"Table Name should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_NAME")),"COLUMN NAME should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("GRANTOR")),"GRANTOR should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("GRANTEE")),"GRANTEE should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("PRIVILEGE")),"PRIVILEGE should not be Empty");
-            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_GRANTABLE")),"IS_GRANTABLE should be YES / NO");
-
-        }
-    }
-    
-    /**
-     * TODO: Check JDBC Specs: Can we have any tables/functions without category? 
      * 
-     * Testing {@link SQLServerDatabaseMetaData#getFunctions(String, String, String)} with sending wrong category.
-     * @throws SQLServerException
      * @throws SQLException
      */
     @Test
-    public void testGetFunctionsWithWrongParams() throws SQLServerException, SQLException {
-        try {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        databaseMetaData.getFunctions("", null, "xp_%");
-        assertTrue(false,"As we are not supplying schema it should fail.");
-        }catch(Exception ae) {
-            
+    public void testGetDBColumn() throws SQLException {
+
+        try (Connection conn = getConnection()) {
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
+
+            String[] types = {"TABLE"};
+            boolean tableFound = false;
+
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                if (rs.next()) {
+                    do {
+                        if (rs.getString("TABLE_NAME").equalsIgnoreCase(tableName)) {
+                            tableFound = true;
+                        }
+                    } while (rs.next() && !tableFound);
+                }
+
+                if (!tableFound) {
+                    MessageFormat form1 = new MessageFormat(TestResource.getResource("R_tableNotFound"));
+                    Object[] msgArgs1 = {tableName};
+                    fail(form1.format(msgArgs1));
+                } else {
+                    try (ResultSet rs1 = databaseMetaData.getColumns(null, null,
+                            AbstractSQLGenerator.escapeIdentifier(tableName), "%")) {
+                        MessageFormat form2 = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+                        Object[][] msgArgs2 = {{"Category"}, {"SCHEMA"}, {"Table"}, {"COLUMN"}, {"Data Type"}, {"Type"},
+                                {"Column Size"}, {"Nullable value"}, {"IS_NULLABLE"}, {"IS_AUTOINCREMENT"}};
+                        while (rs1.next()) {
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_CAT")), form2.format(msgArgs2[0]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_SCHEM")), form2.format(msgArgs2[1]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_NAME")), form2.format(msgArgs2[2]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_NAME")), form2.format(msgArgs2[3]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("DATA_TYPE")), form2.format(msgArgs2[4]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TYPE_NAME")), form2.format(msgArgs2[5]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_SIZE")), form2.format(msgArgs2[6]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("NULLABLE")), form2.format(msgArgs2[7])); // 11
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_NULLABLE")), form2.format(msgArgs2[8])); // 18
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_AUTOINCREMENT")),
+                                    form2.format(msgArgs2[9])); // 22
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
         }
     }
-    
+
+    /**
+     * We can improve this test case by following manner:
+     * <ul>
+     * <li>We can check if PRIVILEGE is in between CRUD / REFERENCES / SELECT / INSERT etc.
+     * <li>IS_GRANTABLE can have only 2 values YES / NO
+     * </ul>
+     * 
+     * @throws SQLException
+     */
+    @Test
+    @Tag(Constants.xAzureSQLDW)
+    public void testGetColumnPrivileges() throws SQLException {
+
+        try (Connection conn = getConnection()) {
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
+            String[] types = {"TABLE"};
+            boolean tableFound = false;
+
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                if (rs.next()) {
+                    do {
+                        if (rs.getString("TABLE_NAME").equalsIgnoreCase(tableName)) {
+                            tableFound = true;
+                        }
+                    } while (rs.next() && !tableFound);
+                }
+
+                if (!tableFound) {
+                    MessageFormat form1 = new MessageFormat(TestResource.getResource("R_tableNotFound"));
+                    Object[] msgArgs1 = {tableName};
+                    fail(form1.format(msgArgs1));
+                } else {
+                    try (ResultSet rs1 = databaseMetaData.getColumnPrivileges(null, null,
+                            AbstractSQLGenerator.escapeIdentifier(tableName), "%")) {
+
+                        MessageFormat form2 = new MessageFormat(TestResource.getResource("R_nameEmpty"));
+                        Object[][] msgArgs2 = {{"Category"}, {"SCHEMA"}, {"Table"}, {"COLUMN"}, {"GRANTOR"},
+                                {"GRANTEE"}, {"PRIVILEGE"}, {"IS_GRANTABLE"}};
+                        while (rs1.next()) {
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_CAT")), form2.format(msgArgs2[0]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_SCHEM")), form2.format(msgArgs2[1]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("TABLE_NAME")), form2.format(msgArgs2[2]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("COLUMN_NAME")), form2.format(msgArgs2[3]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("GRANTOR")), form2.format(msgArgs2[4]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("GRANTEE")), form2.format(msgArgs2[5]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("PRIVILEGE")), form2.format(msgArgs2[6]));
+                            assertTrue(!StringUtils.isEmpty(rs1.getString("IS_GRANTABLE")), form2.format(msgArgs2[7]));
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
+        }
+    }
+
+    /**
+     * Testing {@link SQLServerDatabaseMetaData#getFunctions(String, String, String)} with sending wrong catalog.
+     * 
+     * @throws SQLException
+     */
+    @Test
+    public void testGetFunctionsWithWrongParams() throws SQLException {
+        try (Connection conn = getConnection()) {
+            conn.getMetaData().getFunctions("", null, "xp_%");
+            fail(TestResource.getResource("R_noSchemaShouldFail"));
+        } catch (SQLException e) {
+            assert (e.getMessage().matches(TestUtils.formatErrorMsg("R_invalidArgument")));
+        }
+    }
+
     /**
      * Test {@link SQLServerDatabaseMetaData#getFunctions(String, String, String)}
-     * @throws SQLServerException
+     * 
      * @throws SQLException
      */
     @Test
-    public void testGetFunctions() throws SQLServerException, SQLException {
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        ResultSet rs = databaseMetaData.getFunctions(null, null, "xp_%");
-        
-        while(rs.next()) {
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_CAT")),"FUNCTION_CAT should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_SCHEM")),"FUNCTION_SCHEM should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_NAME")),"FUNCTION_NAME should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("NUM_INPUT_PARAMS")),"NUM_INPUT_PARAMS should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("NUM_OUTPUT_PARAMS")),"NUM_OUTPUT_PARAMS should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("NUM_RESULT_SETS")),"NUM_RESULT_SETS should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_TYPE")),"FUNCTION_TYPE should not be NULL");
+    public void testGetFunctions() throws SQLException {
+        try (Connection conn = getConnection(); ResultSet rs = conn.getMetaData().getFunctions(null, null, "xp_%")) {
+
+            MessageFormat form = new MessageFormat(TestResource.getResource("R_nameNull"));
+            Object[][] msgArgs = {{"FUNCTION_CAT"}, {"FUNCTION_SCHEM"}, {"FUNCTION_NAME"}, {"NUM_INPUT_PARAMS"},
+                    {"NUM_OUTPUT_PARAMS"}, {"NUM_RESULT_SETS"}, {"FUNCTION_TYPE"}};
+            while (rs.next()) {
+                assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_CAT")), form.format(msgArgs[0]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_SCHEM")), form.format(msgArgs[1]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_NAME")), form.format(msgArgs[2]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("NUM_INPUT_PARAMS")), form.format(msgArgs[3]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("NUM_OUTPUT_PARAMS")), form.format(msgArgs[4]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("NUM_RESULT_SETS")), form.format(msgArgs[5]));
+                assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_TYPE")), form.format(msgArgs[6]));
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
         }
-        rs.close();
     }
-    
+
     /**
-     * Te
-     * @throws SQLServerException
+     * 
      * @throws SQLException
      */
     @Test
-    public void testGetFunctionColumns()  throws SQLServerException, SQLException{
-        DatabaseMetaData databaseMetaData = connection.getMetaData();
-        ResultSet rsFunctions = databaseMetaData.getFunctions(null, null, "%");
-        
-      //Fetch one Function
-        assertTrue(rsFunctions.next(), "At least one function should be found");
-        
-        //Go through all columns.
-        ResultSet rs = databaseMetaData.getFunctionColumns(null, null, rsFunctions.getString("FUNCTION_NAME"), "%");
-        
-        while(rs.next()) {
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_CAT")),"FUNCTION_CAT should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_SCHEM")),"FUNCTION_SCHEM should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_NAME")),"FUNCTION_NAME should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("COLUMN_NAME")),"COLUMN_NAME should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("COLUMN_TYPE")),"COLUMN_TYPE should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("DATA_TYPE")),"DATA_TYPE should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("TYPE_NAME")),"TYPE_NAME should not be NULL");
-            assertTrue(!StringUtils.isEmpty(rs.getString("NULLABLE")),"NULLABLE should not be NULL"); //12
-            assertTrue(!StringUtils.isEmpty(rs.getString("IS_NULLABLE")),"IS_NULLABLE should not be NULL"); //19
+    public void testGetFunctionColumns() throws SQLException {
+        try (Connection conn = getConnection()) {
+
+            DatabaseMetaData databaseMetaData = conn.getMetaData();
+            boolean functionFound = false;
+
+            try (ResultSet rsFunctions = databaseMetaData.getFunctions(null, null, "%")) {
+                if (rsFunctions.next()) {
+                    do {
+                        if (rsFunctions.getString("FUNCTION_NAME").equalsIgnoreCase(functionName)) {
+                            functionFound = true;
+                        }
+                    } while (rsFunctions.next() && !functionFound);
+                }
+
+                if (!functionFound) {
+                    try (ResultSet rs = databaseMetaData.getFunctionColumns(null, null,
+                            AbstractSQLGenerator.escapeIdentifier(functionName), "%")) {
+
+                        MessageFormat form2 = new MessageFormat(TestResource.getResource("R_nameNull"));
+                        Object[][] msgArgs2 = {{"FUNCTION_CAT"}, {"FUNCTION_SCHEM"}, {"FUNCTION_NAME"}, {"COLUMN_NAME"},
+                                {"COLUMN_TYPE"}, {"DATA_TYPE"}, {"TYPE_NAME"}, {"NULLABLE"}, {"IS_NULLABLE"}};
+                        while (rs.next()) {
+                            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_CAT")), form2.format(msgArgs2[0]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_SCHEM")), form2.format(msgArgs2[1]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("FUNCTION_NAME")), form2.format(msgArgs2[2]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("COLUMN_NAME")), form2.format(msgArgs2[3]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("COLUMN_TYPE")), form2.format(msgArgs2[4]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("DATA_TYPE")), form2.format(msgArgs2[5]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("TYPE_NAME")), form2.format(msgArgs2[6]));
+                            assertTrue(!StringUtils.isEmpty(rs.getString("NULLABLE")), form2.format(msgArgs2[7])); // 12
+                            assertTrue(!StringUtils.isEmpty(rs.getString("IS_NULLABLE")), form2.format(msgArgs2[8])); // 19
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            fail(TestResource.getResource("R_unexpectedErrorMessage") + e.getMessage());
         }
-        
     }
-    
+
+    @Test
+    @Tag(Constants.xAzureSQLDW)
+    @Tag(Constants.xAzureSQLDB)
+    public void testPreparedStatementMetadataCaching() throws SQLException {
+        try (Connection connection = getConnection()) {
+
+            DatabaseMetaData databaseMetaData = connection.getMetaData();
+            String[] types = {"TABLE"};
+
+            Statement stmtNullCatalog;
+            Statement stmtMasterCatalog;
+
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                stmtNullCatalog = rs.getStatement();
+            }
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                assertSame(stmtNullCatalog, rs.getStatement());
+                rs.getStatement().close();
+            }
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                assertNotSame(stmtNullCatalog, rs.getStatement());
+                stmtNullCatalog = rs.getStatement();
+            }
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                assertSame(stmtNullCatalog, rs.getStatement());
+            }
+            try (ResultSet rs = databaseMetaData.getTables("master", null, "%", types)) {
+                stmtMasterCatalog = rs.getStatement();
+            }
+            try (ResultSet rs = databaseMetaData.getTables("master", null, "%", types)) {
+                assertSame(stmtMasterCatalog, rs.getStatement());
+                rs.getStatement().close();
+            }
+            try (ResultSet rs = databaseMetaData.getTables("master", null, "%", types)) {
+                assertNotSame(stmtMasterCatalog, rs.getStatement());
+                stmtMasterCatalog = rs.getStatement();
+            }
+            try (ResultSet rs = databaseMetaData.getTables("master", null, "%", types)) {
+                assertSame(stmtMasterCatalog, rs.getStatement());
+            }
+            try (ResultSet rs = databaseMetaData.getTables(null, null, "%", types)) {
+                assertSame(stmtNullCatalog, rs.getStatement());
+                rs.getStatement().close();
+            }
+            try (ResultSet rs = databaseMetaData.getTables("master", null, "%", types)) {
+                assertSame(stmtMasterCatalog, rs.getStatement());
+                rs.getStatement().close();
+            }
+        }
+    }
+
+    @Test
+    @Tag(Constants.xAzureSQLDW)
+    public void testGetMaxConnections() throws SQLException {
+        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt
+                .executeQuery("select maximum from sys.configurations where name = 'user connections'")) {
+            assert (null != rs);
+            rs.next();
+
+            DatabaseMetaData databaseMetaData = connection.getMetaData();
+            int maxConn = databaseMetaData.getMaxConnections();
+
+            assertEquals(maxConn, rs.getInt(1));
+        } catch (SQLException e) {
+            fail(e.getMessage());
+        }
+    }
+
+    @BeforeAll
+    public static void setupTable() throws SQLException {
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("CREATE TABLE " + AbstractSQLGenerator.escapeIdentifier(tableName)
+                    + " (col1 int NOT NULL, col2 varchar(200), col3 decimal(15,2))");
+            stmt.execute("CREATE FUNCTION " + AbstractSQLGenerator.escapeIdentifier(functionName)
+                    + " (@p1 INT, @p2 INT) RETURNS INT AS BEGIN DECLARE @result INT; SET @result = @p1 + @p2; RETURN @result; END");
+        }
+    }
+
+    @AfterAll
+    public static void terminate() throws SQLException {
+        try (Statement stmt = connection.createStatement()) {
+            TestUtils.dropTableIfExists(tableName, stmt);
+            TestUtils.dropFunctionIfExists(functionName, stmt);
+        }
+    }
 }
